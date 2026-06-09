@@ -2,6 +2,65 @@
 
 基于 Dify 1.13.3 的电商理赔自动处理个人作品。系统以 Dify Workflow 为编排核心，将订单、物流、用户画像、视觉识别、配置中心、状态机、快速通道计数、支付幂等、决策日志和知识库闭环拆分到明确边界中，验证从理赔申请到自动决策、人工兜底、日志沉淀和错误模式挖掘的完整链路。
 
+> 线上展示页：[metratio.com/index/claims](https://metratio.com/index/claims)
+
+## 快速开始
+
+```bash
+# 1. 启动 Mock 服务
+docker compose -f docker-compose.mock.yml up -d --build
+
+# 2. 健康检查
+curl http://localhost:8080/health
+
+# 3. 在 Dify 中导入主工作流
+#    文件: dify-workflows/claims-main-workflow-stage5-v2.yml
+
+# 4. 导入知识库种子数据
+#    指南: knowledge-base/IMPORT_GUIDE.md
+
+# 5. 运行全链路测试
+DIFY_MAIN_WORKFLOW_API_KEY='...' \
+python3 tools/run_stage5_checks.py --mock-base http://localhost:8080 --workflow
+
+# 6. 重置 Mock 状态
+curl -X POST http://localhost:8080/mock/reset-all
+```
+
+## 目录结构
+
+```
+claims-automation/
+├── README.md
+├── docker-compose.mock.yml          # Mock 服务编排
+├── mock/
+│   ├── main.py                      # 统一 Mock 服务（19 端点）
+│   ├── Dockerfile
+│   └── requirements.txt
+├── dify-workflows/
+│   ├── claims-main-workflow-stage5-v2.yml  # ★ 最终主工作流
+│   ├── claims-main-workflow-stage1-5.yml   # 历史迭代版本
+│   ├── copy-quality-assessment-1.13.3.yml  # 文案质量评估工作流
+│   └── error-pattern-mining-1.13.3.yml     # 错误模式自动挖掘工作流
+├── knowledge-base/
+│   ├── IMPORT_GUIDE.md                     # 知识库导入指南
+│   ├── error-patterns-official/            # 正式错误模式库（5 条）
+│   ├── error-patterns-candidate/           # 候选错误模式库（1 条）
+│   └── similar-cases/                      # 相似案例库（3 条）
+├── sql/
+│   └── init_decision_log.sql               # 决策日志表结构
+├── test-data/
+│   └── stage5-scenarios.json               # 8 个全链路测试场景
+├── tools/
+│   ├── run_stage5_checks.py                # 全链路自动化测试
+│   ├── run_phase4_checks.py                # 闭环链路测试
+│   └── write_candidate_pattern_to_kb.py    # 候选模式写入工具
+└── docs/
+    ├── stage5-test-report.md
+    ├── phase4-closed-loop-test-report.md
+    └── current-progress-and-next-steps.md
+```
+
 ## 1. 项目状态
 
 当前状态：核心链路已完成并通过测试。
