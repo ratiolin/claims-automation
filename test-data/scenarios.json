@@ -1,0 +1,178 @@
+{
+  "scenarios": [
+    {
+      "id": "S01_normal_fast_lane",
+      "name": "正常快速通道",
+      "description": "低金额、物流异常、材料齐全、信号灯绿色，预期自动批准",
+      "input": {
+        "user_text": "订单号10001，物流一直没更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": true,
+        "decision": "auto_approve",
+        "final_amount_range": [25, 45],
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "S02_normal_manual_review",
+      "name": "正常转人工（中金额）",
+      "description": "金额超快速通道上限，需合议中心裁决",
+      "input": {
+        "user_text": "订单号10002，物流错分了，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10002.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": false,
+        "decision": "manual_review",
+        "risk_level": "low"
+      }
+    },
+    {
+      "id": "S03_high_risk_user",
+      "name": "正常转人工（高风险用户）",
+      "description": "高频退款用户，信用助手判定高风险",
+      "input": {
+        "user_text": "订单号10005，用户ID: U002，物流不更新了",
+        "file_list": [
+          {"name": "订单截图_10005.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": false,
+        "decision": "manual_review",
+        "risk_level": "high"
+      }
+    },
+    {
+      "id": "S04_reject_large_amount",
+      "name": "拒绝（金额过大）",
+      "description": "金额远超阈值，直接驳回",
+      "input": {
+        "user_text": "订单号10003，物流一直没更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10003.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": false,
+        "decision": "reject"
+      }
+    },
+    {
+      "id": "S05_missing_materials",
+      "name": "材料缺失转人工",
+      "description": "缺少订单截图或物流截图，不可快速通道",
+      "input": {
+        "user_text": "订单号10004，物流有问题，申请理赔",
+        "file_list": [
+          {"name": "对话截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": false,
+        "decision": "manual_review",
+        "material_source": "filename_guess"
+      }
+    },
+    {
+      "id": "S06_service_unavailable",
+      "name": "异常降级（服务不可用）",
+      "description": "订单API返回503，数据标记N/A，关键数据缺失转人工",
+      "input": {
+        "user_text": "订单号99999，物流不更新了，申请理赔",
+        "file_list": [
+          {"name": "订单截图.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "fast_lane": false,
+        "decision": "manual_review",
+        "confidence": "low"
+      }
+    },
+    {
+      "id": "S07_duplicate_submission",
+      "name": "重复提交",
+      "description": "相同claim_id第二次提交，返回重复提示",
+      "input": {
+        "user_text": "订单号10001，物流一直没更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "duplicate": true,
+        "message": "申请已提交，请勿重复操作"
+      }
+    },
+    {
+      "id": "S08_degraded_mode",
+      "name": "劣化场景",
+      "description": "degradation_index > 0.3, signal_light=yellow，阈值应降低",
+      "input": {
+        "user_text": "订单号10001，物流一直没更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "pre_condition": {
+        "biz_stats_update": {
+          "degradation_index": 0.6,
+          "smoothed_degradation_index": 0.55,
+          "signal_light": "yellow",
+          "queue_pressure": 0.4
+        }
+      },
+      "expected": {
+        "fast_lane": false,
+        "degradation_band": "degraded",
+        "dynamic_threshold_lower": true
+      }
+    }
+  ],
+
+  "user_mapping": {
+    "10001": "U001",
+    "10002": "U001",
+    "10003": "U001",
+    "10004": "U001",
+    "10005": "U002",
+    "99999": "U001"
+  },
+
+  "api_base": "http://claims-mock:8080",
+  "test_endpoints": [
+    {"method": "GET",  "path": "/mock/order/amount?order_id=10001"},
+    {"method": "GET",  "path": "/mock/order/category?order_id=10001"},
+    {"method": "GET",  "path": "/mock/order/detail?order_id=10001"},
+    {"method": "GET",  "path": "/mock/logistics/anomaly-type?order_id=10001"},
+    {"method": "GET",  "path": "/mock/logistics/trace?order_id=10001"},
+    {"method": "GET",  "path": "/mock/policy/search"},
+    {"method": "GET",  "path": "/mock/user/claim-count-12m?user_id=U001"},
+    {"method": "GET",  "path": "/mock/user/static-risk?user_id=U001"},
+    {"method": "GET",  "path": "/mock/user/order-history?user_id=U001"},
+    {"method": "GET",  "path": "/mock/user/claim-history?user_id=U001"},
+    {"method": "GET",  "path": "/mock/user/risk-flags?user_id=U001"},
+    {"method": "GET",  "path": "/mock/biz-stats"},
+    {"method": "POST", "path": "/mock/vision/classify"},
+    {"method": "POST", "path": "/mock/vision/parse-image"},
+    {"method": "POST", "path": "/mock/state-machine/create"},
+    {"method": "POST", "path": "/mock/state-machine/complete"},
+    {"method": "POST", "path": "/mock/fast-lane/try-increment"},
+    {"method": "POST", "path": "/mock/payment/execute"},
+    {"method": "POST", "path": "/mock/decision-log/insert"}
+  ]
+}

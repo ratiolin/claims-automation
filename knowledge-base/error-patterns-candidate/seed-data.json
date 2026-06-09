@@ -1,0 +1,19 @@
+{
+  "kb_name": "错误模式库（候选）",
+  "kb_description": "候选错误模式库，存放待人工确认的错误模式。所有文档初始 priority=15。确认后迁移至正式库并提升 priority。",
+  "documents": [
+    {
+      "name": "ERR-CANDIDATE-001 文案金额表述不一致",
+      "text": "## 候选错误模式：文案中金额与裁决金额不一致\n\n### 详细描述\n系统自动生成的用户文案中，赔付金额表述与合议中心裁决金额偶尔存在偏差。\n例如裁决 30 元但文案写\"赔付 35 元\"，或文案使用了模糊表述\"约 30 元\"。\n\n### 出现次数\n近期3次（待确认是否达阈值）\n\n### 正确做法\n1. 文案生成时严格使用 final_amount 精确值\n2. 文案校验环节增加金额匹配检查\n3. 不允许使用\"约\"\"大概\"等模糊表述\n\n### 避免指示\n- 不要在文案中四舍五入金额\n- 不要让 LLM 自行计算金额\n\n### 状态\n待人工审核。若确认为有效模式，迁移至正式错误模式库并设置 priority=55。",
+      "metadata": {
+        "priority": 15,
+        "severity": "low",
+        "category": "文案质量",
+        "source": "copy_quality_assessment",
+        "status": "pending_review",
+        "occurrence_count": 3,
+        "created_at": "2024-02-20"
+      }
+    }
+  ]
+}

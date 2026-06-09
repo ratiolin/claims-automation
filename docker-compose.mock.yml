@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  claims-mock:
+    build: ./mock
+    ports:
+      - "8080:8080"
+    networks:
+      - docker_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  docker_default:
+    external: true

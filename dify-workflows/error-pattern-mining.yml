@@ -1,0 +1,636 @@
+app:
+  description: "错误模式自动挖掘 — 定时触发工作流。每日从决策日志中提取误判信号，经噪声过滤后写入错误模式候选库。"
+  icon: "⛏️"
+  icon_background: "#FFF3E0"
+  mode: workflow
+  name: 错误模式自动挖掘
+  use_icon_as_answer_icon: false
+
+kind: app
+version: 0.2.0
+
+workflow:
+  conversation_variables: []
+  environment_variables:
+    - name: DECISION_LOG_API
+      value: http://claims-mock:8080/mock/decision-log
+    - name: CANDIDATE_KB_API
+      value: ""
+      description: "候选知识库写入API（Dify Knowledge Base API）"
+    - name: MIN_OCCURRENCE
+      value: "2"
+      description: "同一错误模式7天内最少出现次数，低于此值视为噪声"
+    - name: INITIAL_PRIORITY
+      value: "15"
+      description: "新错误模式初始 priority"
+
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ""
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+
+  graph:
+    edges:
+      # Schedule Trigger → HTTP: 查询决策日志
+      - data:
+          isInIteration: false
+          sourceType: trigger-schedule
+          targetType: http-request
+        id: e_schedule_to_http
+        source: schedule_trigger
+        sourceHandle: source
+        target: fetch_decision_log
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # HTTP → Code: 提取误判记录
+      - data:
+          isInIteration: false
+          sourceType: http-request
+          targetType: code
+        id: e_http_to_extract
+        source: fetch_decision_log
+        sourceHandle: source
+        target: extract_overrides
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → IF/ELSE: 是否有误判记录
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: if-else
+        id: e_extract_to_if
+        source: extract_overrides
+        sourceHandle: source
+        target: has_records
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF False → End (无记录)
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: end
+        id: e_if_false_to_end
+        source: has_records
+        sourceHandle: "false"
+        target: end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF True → LLM: 生成错误模式
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: llm
+        id: e_if_true_to_llm
+        source: has_records
+        sourceHandle: "true"
+        target: generate_patterns
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # LLM → Code: 噪声过滤
+      - data:
+          isInIteration: false
+          sourceType: llm
+          targetType: code
+        id: e_llm_to_filter
+        source: generate_patterns
+        sourceHandle: source
+        target: noise_filter
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → IF/ELSE: 有有效模式
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: if-else
+        id: e_filter_to_has_valid
+        source: noise_filter
+        sourceHandle: source
+        target: has_valid_patterns
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF False → End
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: end
+        id: e_hasvalid_false_to_end
+        source: has_valid_patterns
+        sourceHandle: "false"
+        target: end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF True → Code: 准备入库
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: code
+        id: e_hasvalid_true_to_prepare
+        source: has_valid_patterns
+        sourceHandle: "true"
+        target: prepare_upload
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → HTTP: 写入候选库
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: http-request
+        id: e_prepare_to_upload
+        source: prepare_upload
+        sourceHandle: source
+        target: upload_to_kb
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # HTTP → End
+      - data:
+          isInIteration: false
+          sourceType: http-request
+          targetType: end
+        id: e_upload_to_end
+        source: upload_to_kb
+        sourceHandle: source
+        target: end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+
+    nodes:
+      # ── Schedule Trigger ──
+      - data:
+          cron: "0 2 * * *"
+          desc: "每日凌晨 2:00 自动触发"
+          selected: false
+          title: 定时触发器
+          type: trigger-schedule
+        height: 90
+        id: schedule_trigger
+        position:
+          x: 80
+          y: 300
+        type: custom
+        width: 244
+
+      # ── HTTP: 查询决策日志 ──
+      - data:
+          authorization:
+            config: null
+            type: no-auth
+          body:
+            data: ""
+            type: none
+          desc: "查询近 7 天被人工推翻或投诉的决策记录"
+          method: get
+          params: "days=7&human_override=true&complaint=true"
+          retry_config:
+            max_retries: 3
+            retry_enabled: true
+            retry_interval: 1000
+          selected: false
+          timeout:
+            connect: 10
+            max_connect_timeout: 0
+            max_read_timeout: 0
+            max_write_timeout: 0
+            read: 30
+            write: 10
+          title: 查询决策日志
+          type: http-request
+          url: "{{env.DECISION_LOG_API}}/query"
+        height: 98
+        id: fetch_decision_log
+        position:
+          x: 400
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 提取误判记录 ──
+      - data:
+          code: |
+            import json
+
+            def main(http_body: str) -> dict:
+                """从查询结果中提取误判记录的核心字段"""
+                try:
+                    data = json.loads(http_body) if isinstance(http_body, str) else http_body
+                except (json.JSONDecodeError, TypeError):
+                    return {"record_count": 0, "records_json": "[]", "has_records": False}
+
+                results = data.get("results", [])
+                # 提取关键字段，减少上下文大小
+                simplified = []
+                for r in results:
+                    simplified.append({
+                        "claim_id": r.get("claim_id", ""),
+                        "decision": r.get("decision", ""),
+                        "claim_reason": r.get("claim_reason", "")[:500],
+                        "risk_reason": r.get("risk_reason", "")[:500],
+                        "human_decision": r.get("human_decision", ""),
+                        "complaint": r.get("complaint", False),
+                        "confidence": r.get("confidence", ""),
+                        "risk_level": r.get("risk_level", ""),
+                        "suggested_amount": r.get("suggested_amount", 0),
+                        "final_amount": r.get("final_amount", 0),
+                    })
+
+                return {
+                    "record_count": len(simplified),
+                    "records_json": json.dumps(simplified, ensure_ascii=False),
+                    "has_records": len(simplified) > 0,
+                }
+          code_language: python3
+          desc: "从决策日志查询结果中提取关键字段，缩减上下文"
+          outputs:
+            - name: record_count
+              type: number
+            - name: records_json
+              type: string
+            - name: has_records
+              type: boolean
+          selected: false
+          title: 提取误判记录
+          type: code
+          variables:
+            - value_selector:
+                - fetch_decision_log
+                - body
+              variable: http_body
+        height: 54
+        id: extract_overrides
+        position:
+          x: 720
+          y: 300
+        type: custom
+        width: 244
+
+      # ── IF/ELSE: 有记录 ──
+      - data:
+          conditions:
+            - comparison_operator: is
+              id: cond_has_records
+              value: "true"
+              varType: boolean
+              variable_selector:
+                - extract_overrides
+                - has_records
+          desc: "无记录则跳过，直接结束"
+          selected: false
+          title: 有误判记录?
+          type: if-else
+        height: 126
+        id: has_records
+        position:
+          x: 1040
+          y: 300
+        type: custom
+        width: 244
+
+      # ── LLM: 生成错误模式 ──
+      - data:
+          context:
+            enabled: false
+          desc: "分析误判记录，生成结构化错误模式摘要"
+          memory:
+            role_prefix:
+              assistant: ""
+              user: ""
+            window:
+              enabled: false
+          model:
+            completion_params:
+              temperature: 0.3
+            mode: chat
+            name: gpt-4o-mini
+            provider: langgenius/openai/openai
+          prompt_template:
+            - id: sys_prompt
+              role: system
+              text: |
+                你是理赔系统错误模式分析专家。分析以下被人工推翻或投诉的决策记录，提取共性问题，生成错误模式摘要。
+
+                ## 规则
+                1. 聚焦"系统犯错的原因"，不是"结果"。
+                2. 每条模式包含：摘要、详细描述、正确做法、避免指示。
+                3. 如果多条记录反映相同问题，合并为一条模式。
+                4. 输出严格 JSON 数组。
+
+                ## 输入记录
+                {{records_json}}
+
+                ## 输出格式
+                ```json
+                [
+                  {
+                    "pattern_id": "唯一标识(如 ERR-001)",
+                    "summary": "一句话描述错误模式",
+                    "detail": "详细分析(100-300字)",
+                    "correct_approach": "正确做法",
+                    "avoid_instruction": "避免指示",
+                    "evidence_count": 出现次数,
+                    "severity": "high|medium|low"
+                  }
+                ]
+                ```
+
+                如果无法提取任何模式，返回空数组 `[]`。
+            - id: user_prompt
+              role: user
+              text: "请分析以上 {{record_count}} 条误判记录，提取错误模式。"
+          retry_config:
+            max_retries: 2
+            retry_enabled: true
+            retry_interval: 2000
+          selected: false
+          structured_output:
+            schema:
+              additionalProperties: false
+              properties:
+                patterns:
+                  description: "提取的错误模式列表"
+                  items:
+                    additionalProperties: false
+                    properties:
+                      pattern_id:
+                        description: "模式唯一标识"
+                        type: string
+                      summary:
+                        description: "一句话描述"
+                        type: string
+                      detail:
+                        description: "详细分析"
+                        type: string
+                      correct_approach:
+                        description: "正确做法"
+                        type: string
+                      avoid_instruction:
+                        description: "避免指示"
+                        type: string
+                      evidence_count:
+                        description: "出现次数"
+                        type: integer
+                      severity:
+                        description: "严重程度"
+                        enum:
+                          - high
+                          - medium
+                          - low
+                        type: string
+                    required:
+                      - pattern_id
+                      - summary
+                      - detail
+                      - correct_approach
+                      - avoid_instruction
+                      - evidence_count
+                      - severity
+                    type: object
+                  type: array
+              required:
+                - patterns
+              type: object
+            structured_output_enabled: true
+          title: 生成错误模式
+          type: llm
+          variables:
+            - value_selector:
+                - extract_overrides
+                - records_json
+              variable: records_json
+            - value_selector:
+                - extract_overrides
+                - record_count
+              variable: record_count
+          vision:
+            enabled: false
+        height: 98
+        id: generate_patterns
+        position:
+          x: 1360
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 噪声过滤 ──
+      - data:
+          code: |
+            import json
+
+            def main(structured_output: str) -> dict:
+                """噪声过滤：7天内同模式出现 ≥ MIN_OCCURRENCE 次才入库"""
+                MIN_OCCURRENCE = 2
+                try:
+                    if isinstance(structured_output, dict):
+                        patterns = structured_output.get("patterns", [])
+                    elif isinstance(structured_output, str):
+                        parsed = json.loads(structured_output)
+                        patterns = parsed.get("patterns", []) if isinstance(parsed, dict) else parsed
+                    else:
+                        patterns = []
+                except (json.JSONDecodeError, TypeError):
+                    patterns = []
+
+                if not isinstance(patterns, list):
+                    patterns = []
+
+                # 过滤噪声
+                valid = [p for p in patterns if isinstance(p, dict) and p.get("evidence_count", 0) >= MIN_OCCURRENCE]
+                noise = [p for p in patterns if isinstance(p, dict) and p.get("evidence_count", 0) < MIN_OCCURRENCE]
+
+                return {
+                    "valid_count": len(valid),
+                    "valid_patterns": json.dumps(valid, ensure_ascii=False),
+                    "noise_count": len(noise),
+                    "noise_patterns": json.dumps(noise, ensure_ascii=False),
+                    "has_valid": len(valid) > 0,
+                }
+          code_language: python3
+          desc: "过滤噪声：同模式7天出现 <2 次不入库"
+          outputs:
+            - name: valid_count
+              type: number
+            - name: valid_patterns
+              type: string
+            - name: noise_count
+              type: number
+            - name: noise_patterns
+              type: string
+            - name: has_valid
+              type: boolean
+          selected: false
+          title: 噪声过滤
+          type: code
+          variables:
+            - value_selector:
+                - generate_patterns
+                - structured_output
+              variable: structured_output
+        height: 54
+        id: noise_filter
+        position:
+          x: 1680
+          y: 300
+        type: custom
+        width: 244
+
+      # ── IF/ELSE: 有有效模式 ──
+      - data:
+          conditions:
+            - comparison_operator: is
+              id: cond_has_valid
+              value: "true"
+              varType: boolean
+              variable_selector:
+                - noise_filter
+                - has_valid
+          selected: false
+          title: 有有效模式?
+          type: if-else
+        height: 126
+        id: has_valid_patterns
+        position:
+          x: 2000
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 准备入库 ──
+      - data:
+          code: |
+            import json
+            from datetime import datetime
+
+            def main(valid_patterns: str) -> dict:
+                """为每个有效模式添加 metadata，准备写入候选库"""
+                patterns = json.loads(valid_patterns) if isinstance(valid_patterns, str) else valid_patterns
+                now = datetime.now().isoformat()
+
+                documents = []
+                for p in patterns:
+                    doc = {
+                        "name": f"ERR-CANDIDATE-{p.get('pattern_id', 'UNKNOWN')}",
+                        "text": json.dumps(p, ensure_ascii=False),
+                        "metadata": {
+                            "priority": 15,
+                            "source": "auto_mining",
+                            "severity": p.get("severity", "medium"),
+                            "created_at": now,
+                            "status": "pending_review",
+                        }
+                    }
+                    documents.append(doc)
+
+                return {
+                    "document_count": len(documents),
+                    "documents_json": json.dumps(documents, ensure_ascii=False),
+                    "summary": f"本周期发现 {len(documents)} 个候选错误模式，已写入候选库(priority=15)，等待人工确认。",
+                }
+          code_language: python3
+          desc: "组装文档结构，添加 priority=15 metadata"
+          outputs:
+            - name: document_count
+              type: number
+            - name: documents_json
+              type: string
+            - name: summary
+              type: string
+          selected: false
+          title: 准备入库
+          type: code
+          variables:
+            - value_selector:
+                - noise_filter
+                - valid_patterns
+              variable: valid_patterns
+        height: 54
+        id: prepare_upload
+        position:
+          x: 2320
+          y: 300
+        type: custom
+        width: 244
+
+      # ── HTTP: 写入候选库 ──
+      - data:
+          authorization:
+            config: null
+            type: no-auth
+          body:
+            data: '{"documents": {{documents_json}}}'
+            type: json
+          desc: "调用 Dify 知识库 API 写入候选错误模式库"
+          method: post
+          retry_config:
+            max_retries: 2
+            retry_enabled: true
+            retry_interval: 2000
+          selected: false
+          timeout:
+            connect: 10
+            max_connect_timeout: 0
+            max_read_timeout: 0
+            max_write_timeout: 0
+            read: 30
+            write: 10
+          title: 写入候选库
+          type: http-request
+          url: "{{env.CANDIDATE_KB_API}}/documents"
+        height: 98
+        id: upload_to_kb
+        position:
+          x: 2640
+          y: 300
+        type: custom
+        width: 244
+
+      # ── End ──
+      - data:
+          desc: "输出挖掘摘要"
+          outputs:
+            - value_selector:
+                - prepare_upload
+                - summary
+              variable: summary
+            - value_selector:
+                - prepare_upload
+                - document_count
+              variable: added_count
+            - value_selector:
+                - noise_filter
+                - noise_count
+              variable: noise_count
+          selected: false
+          title: 结束
+          type: end
+        height: 90
+        id: end
+        position:
+          x: 2960
+          y: 300
+        type: custom
+        width: 244
+
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1

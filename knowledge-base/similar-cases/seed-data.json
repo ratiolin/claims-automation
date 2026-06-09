@@ -1,0 +1,49 @@
+{
+  "kb_name": "相似案例库",
+  "kb_description": "相似案例库，供工作流知识检索节点使用。案例摘要按物流类型、金额区间、品类标注，用于辅助双助手推理。",
+  "documents": [
+    {
+      "name": "CASE-001 正向案例：物流超时小额快速赔付",
+      "text": "## 案例摘要\n\n### 基本信息\n- 订单金额: 28元\n- 商品品类: 日用品\n- 物流异常类型: 超时未更新（超72小时）\n- 用户历史: 12月理赔1次，退款率10%\n\n### 裁决过程\n- 定责定损助手: claim_valid=true, confidence=high, suggested_amount=28元\n- 用户信用助手: risk_level=low, 无异常信号\n- 合议中心: 金额28元 < 动态阈值200元, 自动批准\n\n### 关键证据\n- 订单截图: 有\n- 物流截图: 有，显示2024-01-05揽件后无更新\n- 材料验证: vision_model 确认\n\n### 最终结果\n自动批准，赔付28元。无投诉，未被推翻。",
+      "metadata": {
+        "case_type": "positive",
+        "logistics_type": "超时未更新",
+        "amount_range": "small",
+        "category": "日用品",
+        "risk_level": "low",
+        "decision": "auto_approve",
+        "created_at": "2024-01-10"
+      }
+    },
+    {
+      "name": "CASE-002 负向案例：已签收物流误判超时",
+      "text": "## 案例摘要\n\n### 基本信息\n- 订单金额: 65元\n- 商品品类: 电子产品\n- 物流异常类型: 其他（用户声称未收到）\n- 用户历史: 近30天退款率70%\n\n### 裁决过程\n- 定责定损助手: claim_valid=true, confidence=medium, suggested_amount=65元\n  （错误：仅根据用户描述判定，未仔细核查物流最终状态）\n- 用户信用助手: risk_level=low（错误：未识别高频退款模式）\n- 合议中心: 自动批准65元\n\n### 推翻原因\n人工审核发现物流轨迹显示1月14日已签收（签收人姓名字段非空），\n用户实际已收货。高频退款行为辅助确认了恶意索赔倾向。\n\n### 纠正措施\n- 将\"物流已签收但用户声称未收到\"模式加入错误提醒\n- 增强用户信用助手对退款率的敏感度\n\n### 最终结果\n人工推翻，改为拒绝。",
+      "metadata": {
+        "case_type": "negative",
+        "logistics_type": "其他",
+        "amount_range": "small",
+        "category": "电子产品",
+        "risk_level": "high",
+        "decision": "reject",
+        "was_overridden": true,
+        "created_at": "2024-01-15"
+      }
+    },
+    {
+      "name": "CASE-003 纠偏案例：高估损失后修正金额",
+      "text": "## 案例摘要\n\n### 基本信息\n- 订单金额: 200元\n- 商品品类: 家电配件\n- 物流异常类型: 错分（延误3天）\n- 用户历史: 正常，12月理赔1次\n\n### 初次裁决\n- 定责定损助手: claim_valid=true, confidence=high, suggested_amount=200元\n  （错误：按订单全额建议赔付，未考虑实际损失仅为延误）\n- 用户信用助手: risk_level=low\n- 合议中心: 自动批准200元\n\n### 人工审核发现\n错分仅导致3天延误，商品最终正常送达。实际损失远小于订单金额。\n根据政策：错分延误3天，赔付标准为订单金额20%，即40元。\n\n### 纠正措施\n- 修正金额为40元\n- 金额偏差: (200-40)/40 = 400%，远超30%纠偏阈值\n- 将此案例补充入相似案例库，提示\"错分延误需按时间比例赔付\"\n\n### 最终结果\n人工修正金额为40元，已赔付。",
+      "metadata": {
+        "case_type": "correction",
+        "logistics_type": "错分",
+        "amount_range": "medium",
+        "category": "家电配件",
+        "risk_level": "low",
+        "decision": "auto_approve",
+        "amount_deviation": "400%",
+        "corrected_amount": 40,
+        "original_amount": 200,
+        "created_at": "2024-01-25"
+      }
+    }
+  ]
+}

@@ -1,0 +1,339 @@
+app:
+  description: 评估理赔结果文案质量，低分时输出候选错误模式，供人工确认后写入候选库。
+  icon: 🔍
+  icon_type: emoji
+  icon_background: '#E3F2FD'
+  mode: workflow
+  name: 文案质量评估
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.6.0
+dependencies: []
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+      id: start-source-score_copy-target
+      source: start
+      sourceHandle: source
+      target: score_copy
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: score_copy-source-check_low_score-target
+      source: score_copy
+      sourceHandle: source
+      target: check_low_score
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: check_low_score-true-end_candidate-target
+      source: check_low_score
+      sourceHandle: 'true'
+      target: end_candidate
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: check_low_score-false-end_pass-target
+      source: check_low_score
+      sourceHandle: 'false'
+      target: end_pass
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: 通过 Workflow API 传入理赔文案与决策上下文。
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: claim_id
+          max_length: 128
+          options: []
+          required: false
+          type: text-input
+          variable: claim_id
+        - label: 用户文案
+          max_length: 4096
+          options: []
+          required: true
+          type: paragraph
+          variable: user_message
+        - label: 决策
+          max_length: 128
+          options: []
+          required: false
+          type: text-input
+          variable: decision
+        - label: 赔付金额
+          max_length: 128
+          options: []
+          required: false
+          type: number
+          variable: payout_amount
+        - label: 决策原因
+          max_length: 4096
+          options: []
+          required: false
+          type: paragraph
+          variable: review_reason
+      height: 130
+      id: start
+      position:
+        x: 80
+        y: 300
+      positionAbsolute:
+        x: 80
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: "import json\nimport re\n\nRISKY_TERMS = [\"保证\", \"绝对\", \"无条件\", \"一定通过\", \"马上赔付\", \"必然赔付\"]\n\ndef to_float(value):\n\
+          \    try:\n        return float(value)\n    except Exception:\n        return 0.0\n\ndef safe_text(value, limit=1200):\n\
+          \    text = str(value or \"\").replace(\"\\\\\", \"/\").replace('\"', \"'\")\n    return \" \".join(text.split())[:limit]\n\
+          \ndef main(claim_id: str, user_message: str, decision: str, payout_amount: float, review_reason: str):\n    message\
+          \ = safe_text(user_message, 2000)\n    decision = (decision or \"\").strip()\n    amount = to_float(payout_amount)\n\
+          \    reason = safe_text(review_reason, 1200)\n\n    issues = []\n    if not message:\n        issues.append(\"empty_message\"\
+          )\n    if len(message) < 20:\n        issues.append(\"too_short\")\n    if any(term in message for term in RISKY_TERMS):\n\
+          \        issues.append(\"risky_absolute_terms\")\n    if decision == \"approve\" and amount <= 0:\n        issues.append(\"\
+          approve_without_amount\")\n    if decision in (\"manual_review\", \"reject\") and \"人工\" not in message and \"原因\"\
+          \ not in message and \"复核\" not in message:\n        issues.append(\"missing_explanation\")\n    if decision ==\
+          \ \"approve\" and \"金额\" not in message and \"赔付\" not in message and \"理赔\" not in message:\n        issues.append(\"\
+          approve_missing_payout_hint\")\n\n    friendliness = 100\n    if \"请\" not in message and \"您\" not in message:\n\
+          \        friendliness -= 12\n    if len(message) > 500:\n        friendliness -= 8\n    accuracy = 100\n    if \"\
+          approve_without_amount\" in issues:\n        accuracy -= 45\n    if not decision:\n        accuracy -= 20\n    compliance\
+          \ = 100 - 30 * sum(1 for item in issues if item in (\"risky_absolute_terms\", \"empty_message\"))\n    compliance\
+          \ = max(0, compliance)\n    total = round(max(0, min(100, friendliness * 0.25 + accuracy * 0.4 + compliance * 0.35)),\
+          \ 2)\n    low_score = total < 75 or bool(set(issues) & {\"risky_absolute_terms\", \"empty_message\", \"approve_without_amount\"\
+          })\n\n    candidate = {\n        \"title\": \"文案质量问题：\" + (\"、\".join(issues[:3]) if issues else \"无\"),\n     \
+          \   \"category\": \"文案质量\",\n        \"priority\": 15 if low_score else 0,\n        \"status\": \"pending_review\"\
+          ,\n        \"evidence\": {\n            \"claim_id\": claim_id,\n            \"decision\": decision,\n         \
+          \   \"score\": total,\n            \"issues\": issues,\n            \"sample\": message[:300],\n            \"review_reason\"\
+          : reason[:300],\n        }\n    }\n    return {\n        \"quality_status\": \"candidate_generated\" if low_score\
+          \ else \"passed\",\n        \"score\": total,\n        \"friendliness_score\": max(0, friendliness),\n        \"\
+          accuracy_score\": max(0, accuracy),\n        \"compliance_score\": compliance,\n        \"low_score\": low_score,\n\
+          \        \"issues_json\": json.dumps(issues, ensure_ascii=False),\n        \"candidate_json\": json.dumps(candidate,\
+          \ ensure_ascii=False),\n        \"claim_id\": claim_id,\n        \"decision\": decision,\n        \"user_message\"\
+          : message\n    }"
+        code_language: python3
+        desc: 用确定性规则评估友好性、准确性与合规性，输出候选错误模式。
+        outputs:
+          quality_status:
+            children: {}
+            type: string
+          score:
+            children: {}
+            type: number
+          friendliness_score:
+            children: {}
+            type: number
+          accuracy_score:
+            children: {}
+            type: number
+          compliance_score:
+            children: {}
+            type: number
+          low_score:
+            children: {}
+            type: boolean
+          issues_json:
+            children: {}
+            type: string
+          candidate_json:
+            children: {}
+            type: string
+          claim_id:
+            children: {}
+            type: string
+          decision:
+            children: {}
+            type: string
+          user_message:
+            children: {}
+            type: string
+        selected: false
+        title: 文案质量评分
+        type: code
+        variables:
+        - value_selector:
+          - start
+          - claim_id
+          variable: claim_id
+        - value_selector:
+          - start
+          - user_message
+          variable: user_message
+        - value_selector:
+          - start
+          - decision
+          variable: decision
+        - value_selector:
+          - start
+          - payout_amount
+          variable: payout_amount
+        - value_selector:
+          - start
+          - review_reason
+          variable: review_reason
+      height: 54
+      id: score_copy
+      position:
+        x: 400
+        y: 300
+      positionAbsolute:
+        x: 400
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: cond_check_low_score
+            value: 'true'
+            varType: boolean
+            variable_selector:
+            - score_copy
+            - low_score
+          id: 'true'
+          logical_operator: and
+        desc: 低分或强风险文案进入候选错误模式输出。
+        selected: false
+        title: 低分?
+        type: if-else
+      height: 126
+      id: check_low_score
+      position:
+        x: 720
+        y: 300
+      positionAbsolute:
+        x: 720
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 文案质量通过。
+        outputs:
+        - value_selector:
+          - score_copy
+          - quality_status
+          variable: quality_status
+        - value_selector:
+          - score_copy
+          - score
+          variable: score
+        - value_selector:
+          - score_copy
+          - issues_json
+          variable: issues_json
+        - value_selector:
+          - score_copy
+          - claim_id
+          variable: claim_id
+        selected: false
+        title: 结束：通过
+        type: end
+      height: 90
+      id: end_pass
+      position:
+        x: 1040
+        y: 160
+      positionAbsolute:
+        x: 1040
+        y: 160
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 文案低分，输出候选错误模式 JSON。
+        outputs:
+        - value_selector:
+          - score_copy
+          - quality_status
+          variable: quality_status
+        - value_selector:
+          - score_copy
+          - score
+          variable: score
+        - value_selector:
+          - score_copy
+          - issues_json
+          variable: issues_json
+        - value_selector:
+          - score_copy
+          - candidate_json
+          variable: candidate_json
+        - value_selector:
+          - score_copy
+          - claim_id
+          variable: claim_id
+        selected: false
+        title: 结束：候选模式
+        type: end
+      height: 90
+      id: end_candidate
+      position:
+        x: 1040
+        y: 420
+      positionAbsolute:
+        x: 1040
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.7
+  rag_pipeline_variables: []

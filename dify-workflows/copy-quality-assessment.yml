@@ -1,0 +1,616 @@
+app:
+  description: "文案质量评估 — 独立 Dify 工作流。HTTP Webhook 触发，评估生成的用户文案质量，低分自动写入错误模式候选库。"
+  icon: "🔍"
+  icon_background: "#E3F2FD"
+  mode: workflow
+  name: 文案质量评估
+  use_icon_as_answer_icon: false
+
+kind: app
+version: 0.2.0
+
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ""
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: true
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+      # Start → Code: 解析输入
+      - data:
+          isInIteration: false
+          sourceType: start
+          targetType: code
+        id: e_start_to_parse
+        source: start
+        sourceHandle: source
+        target: parse_input
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → Code: 友好性评分
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_parse_to_friendliness
+        source: parse_input
+        sourceHandle: source
+        target: score_friendliness
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → Code: 准确性评分
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_parse_to_accuracy
+        source: parse_input
+        sourceHandle: source
+        target: score_accuracy
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # Code → Code: 合规性评分
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_parse_to_compliance
+        source: parse_input
+        sourceHandle: source
+        target: score_compliance
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 三项评分 → 综合评分
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_friendliness_to_merge
+        source: score_friendliness
+        sourceHandle: source
+        target: merge_scores
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_accuracy_to_merge
+        source: score_accuracy
+        sourceHandle: source
+        target: merge_scores
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: code
+        id: e_compliance_to_merge
+        source: score_compliance
+        sourceHandle: source
+        target: merge_scores
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 综合评分 → IF/ELSE: 是否低分
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: if-else
+        id: e_merge_to_if
+        source: merge_scores
+        sourceHandle: source
+        target: check_low_score
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF True → 写入候选库
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: code
+        id: e_if_to_candidate
+        source: check_low_score
+        sourceHandle: "true"
+        target: generate_candidate
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF False → End
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: end
+        id: e_if_to_end
+        source: check_low_score
+        sourceHandle: "false"
+        target: end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 生成候选 → End
+      - data:
+          isInIteration: false
+          sourceType: code
+          targetType: end
+        id: e_candidate_to_end
+        source: generate_candidate
+        sourceHandle: source
+        target: end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+
+    nodes:
+      # ── Start ──
+      - data:
+          desc: "接收 Webhook 调用，输入文案和裁决上下文"
+          selected: false
+          title: 开始
+          type: start
+          variables: []
+        height: 90
+        id: start
+        position:
+          x: 80
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 解析输入 ──
+      - data:
+          code: |
+            import json
+
+            def main(http_body: str) -> dict:
+                """解析 Webhook 请求体，提取评分所需字段"""
+                try:
+                    body = json.loads(http_body) if isinstance(http_body, str) else http_body
+                except (json.JSONDecodeError, TypeError):
+                    return {"error": "invalid_input", "user_message": "", "decision": "", "amount": 0}
+
+                return {
+                    "user_message": body.get("user_message", ""),
+                    "review_reason": body.get("review_reason", ""),
+                    "decision": body.get("decision", ""),
+                    "amount": body.get("amount", 0),
+                    "claim_id": body.get("claim_id", ""),
+                }
+          code_language: python3
+          desc: "解析 HTTP 请求体，提取文案/裁决/金额字段"
+          outputs:
+            - name: user_message
+              type: string
+            - name: review_reason
+              type: string
+            - name: decision
+              type: string
+            - name: amount
+              type: number
+            - name: claim_id
+              type: string
+            - name: error
+              type: string
+          selected: false
+          title: 解析输入
+          type: code
+          variables:
+            - value_selector:
+                - sys
+                - body
+              variable: http_body
+        height: 54
+        id: parse_input
+        position:
+          x: 400
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 友好性评分（并行分支1） ──
+      - data:
+          code: |
+            def main(user_message: str, review_reason: str, decision: str) -> dict:
+                """友好性评分（0-1）：检查语气、礼貌用语、有无冒犯性表述"""
+                text = f"{user_message} {review_reason}"
+                score = 1.0
+                flags = []
+
+                offensive_words = ["活该", "骗保", "活不起", "你这种人"]
+                for w in offensive_words:
+                    if w in text:
+                        score -= 0.2
+                        flags.append(f"冒犯性用语: {w}")
+
+                if not any(word in text for word in ["您", "抱歉", "感谢", "理解"]):
+                    score -= 0.1
+                    flags.append("缺少礼貌用语")
+
+                if decision == "reject" and "抱歉" not in user_message:
+                    score -= 0.1
+                    flags.append("驳回文案缺少歉意表达")
+
+                return {
+                    "friendliness_score": round(max(score, 0.0), 2),
+                    "friendliness_flags": flags,
+                }
+          code_language: python3
+          desc: "评估文案友好性：语气、礼貌用语、无冒犯性"
+          outputs:
+            - name: friendliness_score
+              type: number
+            - name: friendliness_flags
+              type: string
+          selected: false
+          title: 友好性评分
+          type: code
+          variables:
+            - value_selector:
+                - parse_input
+                - user_message
+              variable: user_message
+            - value_selector:
+                - parse_input
+                - review_reason
+              variable: review_reason
+            - value_selector:
+                - parse_input
+                - decision
+              variable: decision
+        height: 54
+        id: score_friendliness
+        position:
+          x: 720
+          y: 160
+        type: custom
+        width: 244
+
+      # ── Code: 准确性评分（并行分支2） ──
+      - data:
+          code: |
+            import re
+
+            def main(user_message: str, review_reason: str, amount: float) -> dict:
+                """准确性评分（0-1）：金额是否一致、事实是否可核查"""
+                text = f"{user_message} {review_reason}"
+                score = 1.0
+                flags = []
+
+                # 检查金额是否在文案中体现
+                amount_str = str(amount) if amount else ""
+                if amount_str and amount_str not in text:
+                    score -= 0.2
+                    flags.append(f"文案未包含赔付金额 {amount_str}")
+
+                # 检查是否有编造迹象
+                hallucination_markers = ["经核实", "根据系统记录", "经过调查"]
+                if any(m in text for m in hallucination_markers) and amount == 0:
+                    score -= 0.1
+                    flags.append("疑似编造核查过程")
+
+                # 空文案
+                if not user_message.strip() and not review_reason.strip():
+                    score = 0.0
+                    flags.append("文案为空")
+
+                return {
+                    "accuracy_score": round(max(score, 0.0), 2),
+                    "accuracy_flags": flags,
+                }
+          code_language: python3
+          desc: "评估文案准确性：金额一致、事实可核查、无编造"
+          outputs:
+            - name: accuracy_score
+              type: number
+            - name: accuracy_flags
+              type: string
+          selected: false
+          title: 准确性评分
+          type: code
+          variables:
+            - value_selector:
+                - parse_input
+                - user_message
+              variable: user_message
+            - value_selector:
+                - parse_input
+                - review_reason
+              variable: review_reason
+            - value_selector:
+                - parse_input
+                - amount
+              variable: amount
+        height: 54
+        id: score_accuracy
+        position:
+          x: 720
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 合规性评分（并行分支3） ──
+      - data:
+          code: |
+            def main(user_message: str, review_reason: str) -> dict:
+                """合规性评分（0-1）：包含必要声明、无过度承诺"""
+                text = f"{user_message} {review_reason}"
+                score = 1.0
+                flags = []
+
+                required = ["如有疑问", "联系客服", "工作日"]
+                for r in required:
+                    if r not in text:
+                        score -= 0.05
+                        flags.append(f"缺少合规提示: {r}")
+
+                over_promise = ["一定", "保证", "肯定赔", "100%"]
+                for p in over_promise:
+                    if p in text:
+                        score -= 0.1
+                        flags.append(f"过度承诺: {p}")
+
+                # 涉及虚假材料警告
+                if "虚假" in text or "伪造" in text:
+                    pass  # 合规行为
+
+                return {
+                    "compliance_score": round(max(score, 0.0), 2),
+                    "compliance_flags": flags,
+                }
+          code_language: python3
+          desc: "评估文案合规性：必要声明、无过度承诺、风险提示"
+          outputs:
+            - name: compliance_score
+              type: number
+            - name: compliance_flags
+              type: string
+          selected: false
+          title: 合规性评分
+          type: code
+          variables:
+            - value_selector:
+                - parse_input
+                - user_message
+              variable: user_message
+            - value_selector:
+                - parse_input
+                - review_reason
+              variable: review_reason
+        height: 54
+        id: score_compliance
+        position:
+          x: 720
+          y: 440
+        type: custom
+        width: 244
+
+      # ── Code: 综合评分 ──
+      - data:
+          code: |
+            import json
+
+            def main(friendliness_score: float, friendliness_flags: str,
+                     accuracy_score: float, accuracy_flags: str,
+                     compliance_score: float, compliance_flags: str,
+                     user_message: str, review_reason: str,
+                     decision: str, amount: float, claim_id: str) -> dict:
+                """加权综合评分 + 生成候选错误模式"""
+                # 权重: 准确性 0.4, 合规性 0.3, 友好性 0.3
+                quality_score = round(
+                    accuracy_score * 0.4 + compliance_score * 0.3 + friendliness_score * 0.3,
+                    2
+                )
+
+                all_flags = (
+                    (json.loads(friendliness_flags) if isinstance(friendliness_flags, str) else friendliness_flags) +
+                    (json.loads(accuracy_flags) if isinstance(accuracy_flags, str) else accuracy_flags) +
+                    (json.loads(compliance_flags) if isinstance(compliance_flags, str) else compliance_flags)
+                )
+
+                return {
+                    "quality_score": quality_score,
+                    "all_flags": json.dumps(all_flags, ensure_ascii=False),
+                    "is_low_quality": quality_score < 0.7,
+                    "context": json.dumps({
+                        "user_message": user_message,
+                        "review_reason": review_reason,
+                        "decision": decision,
+                        "amount": amount,
+                        "claim_id": claim_id,
+                    }, ensure_ascii=False),
+                }
+          code_language: python3
+          desc: "加权综合评分：准确性0.4 + 合规性0.3 + 友好性0.3"
+          outputs:
+            - name: quality_score
+              type: number
+            - name: all_flags
+              type: string
+            - name: is_low_quality
+              type: boolean
+            - name: context
+              type: string
+          selected: false
+          title: 综合评分
+          type: code
+          variables:
+            - value_selector:
+                - score_friendliness
+                - friendliness_score
+              variable: friendliness_score
+            - value_selector:
+                - score_friendliness
+                - friendliness_flags
+              variable: friendliness_flags
+            - value_selector:
+                - score_accuracy
+                - accuracy_score
+              variable: accuracy_score
+            - value_selector:
+                - score_accuracy
+                - accuracy_flags
+              variable: accuracy_flags
+            - value_selector:
+                - score_compliance
+                - compliance_score
+              variable: compliance_score
+            - value_selector:
+                - score_compliance
+                - compliance_flags
+              variable: compliance_flags
+            - value_selector:
+                - parse_input
+                - user_message
+              variable: user_message
+            - value_selector:
+                - parse_input
+                - review_reason
+              variable: review_reason
+            - value_selector:
+                - parse_input
+                - decision
+              variable: decision
+            - value_selector:
+                - parse_input
+                - amount
+              variable: amount
+            - value_selector:
+                - parse_input
+                - claim_id
+              variable: claim_id
+        height: 54
+        id: merge_scores
+        position:
+          x: 1040
+          y: 300
+        type: custom
+        width: 244
+
+      # ── IF/ELSE: 低分判断 ──
+      - data:
+          conditions:
+            - comparison_operator: is
+              id: cond_low_quality
+              value: "true"
+              varType: boolean
+              variable_selector:
+                - merge_scores
+                - is_low_quality
+          desc: "quality_score < 0.7 时写入候选库"
+          selected: false
+          title: 是否低分
+          type: if-else
+        height: 126
+        id: check_low_score
+        position:
+          x: 1360
+          y: 300
+        type: custom
+        width: 244
+
+      # ── Code: 生成候选错误模式 ──
+      - data:
+          code: |
+            import json
+
+            def main(quality_score: float, all_flags: str, context: str) -> dict:
+                """生成候选错误模式摘要，供后续写入知识库"""
+                flags = json.loads(all_flags) if isinstance(all_flags, str) else all_flags
+                ctx = json.loads(context) if isinstance(context, str) else context
+
+                candidate = {
+                    "type": "文案质量问题",
+                    "quality_score": quality_score,
+                    "flags": flags,
+                    "context": ctx,
+                    "summary": f"文案质量得分 {quality_score}，存在问题: {'; '.join(flags[:3])}",
+                    "suggestion": "请人工审核文案模板，增强准确性和合规性表述",
+                    "priority": 15,
+                    "created_at": "",
+                }
+
+                return {
+                    "candidate_json": json.dumps(candidate, ensure_ascii=False),
+                    "has_candidate": True,
+                }
+          code_language: python3
+          desc: "生成候选错误模式JSON，priority=15待人工确认"
+          outputs:
+            - name: candidate_json
+              type: string
+            - name: has_candidate
+              type: boolean
+          selected: false
+          title: 生成候选
+          type: code
+          variables:
+            - value_selector:
+                - merge_scores
+                - quality_score
+              variable: quality_score
+            - value_selector:
+                - merge_scores
+                - all_flags
+              variable: all_flags
+            - value_selector:
+                - merge_scores
+                - context
+              variable: context
+        height: 54
+        id: generate_candidate
+        position:
+          x: 1680
+          y: 180
+        type: custom
+        width: 244
+
+      # ── End ──
+      - data:
+          desc: "输出评分结果"
+          outputs:
+            - value_selector:
+                - merge_scores
+                - quality_score
+              variable: quality_score
+            - value_selector:
+                - merge_scores
+                - all_flags
+              variable: all_flags
+            - value_selector:
+                - generate_candidate
+                - candidate_json
+              variable: candidate_json
+          selected: false
+          title: 结束
+          type: end
+        height: 90
+        id: end
+        position:
+          x: 2000
+          y: 300
+        type: custom
+        width: 244
+
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1

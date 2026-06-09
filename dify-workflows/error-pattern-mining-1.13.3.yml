@@ -1,0 +1,457 @@
+app:
+  description: 由外部调度器或手动 Workflow API 触发，查询决策日志并生成候选错误模式。
+  icon: ⛏️
+  icon_type: emoji
+  icon_background: '#FFF3E0'
+  mode: workflow
+  name: 错误模式自动挖掘
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.6.0
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.15@725407927b04e236212083d20e92830d60fa944e42cd357ef6902c160414f6f1
+    version: null
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: http-request
+      id: start-source-fetch_decision_log-target
+      source: start
+      sourceHandle: source
+      target: fetch_decision_log
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: fetch_decision_log-source-aggregate_candidates-target
+      source: fetch_decision_log
+      sourceHandle: source
+      target: aggregate_candidates
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: aggregate_candidates-source-check_candidates-target
+      source: aggregate_candidates
+      sourceHandle: source
+      target: check_candidates
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: check_candidates-false-end_empty-target
+      source: check_candidates
+      sourceHandle: 'false'
+      target: end_empty
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: check_candidates-true-generate_patterns-target
+      source: check_candidates
+      sourceHandle: 'true'
+      target: generate_patterns
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: generate_patterns-source-parse_patterns-target
+      source: generate_patterns
+      sourceHandle: source
+      target: parse_patterns
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: parse_patterns-source-end_patterns-target
+      source: parse_patterns
+      sourceHandle: source
+      target: end_patterns
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: 外部 cron 或手动调用 Workflow API 触发。
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: 回看天数
+          max_length: 64
+          options: []
+          required: false
+          type: number
+          variable: days
+        - label: 最小出现次数
+          max_length: 64
+          options: []
+          required: false
+          type: number
+          variable: min_occurrence
+      height: 110
+      id: start
+      position:
+        x: 80
+        y: 300
+      positionAbsolute:
+        x: 80
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data: []
+          type: none
+        headers: ''
+        variables: []
+        ssl_verify: true
+        default_value:
+        - key: body
+          type: string
+          value: '{"count":0,"results":[]}'
+        - key: status_code
+          type: number
+          value: 599
+        desc: 查询最近 N 天决策日志。Mock 查询失败时返回空结果，避免流程中断。
+        method: get
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        timeout:
+          connect: 5
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+          read: 20
+          write: 5
+        title: 查询决策日志
+        type: http-request
+        url: http://claims-mock:8080/mock/decision-log/query?days={{#start.days#}}
+      height: 98
+      id: fetch_decision_log
+      position:
+        x: 400
+        y: 300
+      positionAbsolute:
+        x: 400
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: "import json\nfrom collections import Counter, defaultdict\n\ndef to_int(value, default):\n    try:\n      \
+          \  return int(float(value))\n    except Exception:\n        return default\n\ndef safe_text(value, limit=1000):\n\
+          \    text = str(value or \"\").replace(\"\\\\\", \"/\").replace('\"', \"'\")\n    return \" \".join(text.split())[:limit]\n\
+          \ndef main(http_body: str, min_occurrence: str):\n    try:\n        data = json.loads(http_body) if isinstance(http_body,\
+          \ str) else (http_body or {})\n    except Exception:\n        data = {}\n    rows = data.get(\"results\") or []\n\
+          \    min_count = max(1, to_int(min_occurrence, 2))\n\n    groups = defaultdict(list)\n    for row in rows:\n   \
+          \     decision = row.get(\"decision\") or \"unknown\"\n        material = row.get(\"material_source\") or \"unknown\"\
+          \n        reason = safe_text(row.get(\"review_reason\") or row.get(\"claim_reason\") or row.get(\"risk_reason\"\
+          ), 240)\n        if not reason and decision not in (\"manual_review\", \"reject\"):\n            continue\n    \
+          \    key = (decision, material, reason[:60] or \"missing_reason\")\n        groups[key].append(row)\n\n    candidates\
+          \ = []\n    for (decision, material, reason_key), items in groups.items():\n        if len(items) < min_count:\n\
+          \            continue\n        candidates.append({\n            \"pattern_key\": f\"{decision}:{material}:{reason_key}\"\
+          ,\n            \"title\": f\"{decision} / {material} 高频问题\",\n            \"category\": \"自动挖掘\",\n            \"\
+          priority\": 15,\n            \"status\": \"pending_review\",\n            \"occurrence_count\": len(items),\n  \
+          \          \"sample_claim_ids\": [i.get(\"claim_id\", \"\") for i in items[:5]],\n            \"evidence_summary\"\
+          : safe_text(items[0].get(\"review_reason\") or items[0].get(\"claim_reason\") or items[0].get(\"risk_reason\"),\
+          \ 500)\n        })\n\n    context = {\n        \"record_count\": len(rows),\n        \"min_occurrence\": min_count,\n\
+          \        \"candidate_count\": len(candidates),\n        \"candidates\": candidates[:10],\n    }\n    return {\n\
+          \        \"record_count\": len(rows),\n        \"candidate_count\": len(candidates),\n        \"has_candidates\"\
+          : len(candidates) > 0,\n        \"candidate_context\": json.dumps(context, ensure_ascii=False),\n        \"candidates_json\"\
+          : json.dumps(candidates, ensure_ascii=False)\n    }"
+        code_language: python3
+        desc: 按决策、材料来源与原因聚合，执行 7 天至少 N 次的噪声过滤。
+        outputs:
+          record_count:
+            children: {}
+            type: number
+          candidate_count:
+            children: {}
+            type: number
+          has_candidates:
+            children: {}
+            type: boolean
+          candidate_context:
+            children: {}
+            type: string
+          candidates_json:
+            children: {}
+            type: string
+        selected: false
+        title: 聚合候选模式
+        type: code
+        variables:
+        - value_selector:
+          - fetch_decision_log
+          - body
+          variable: http_body
+        - value_selector:
+          - start
+          - min_occurrence
+          variable: min_occurrence
+      height: 54
+      id: aggregate_candidates
+      position:
+        x: 720
+        y: 300
+      positionAbsolute:
+        x: 720
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: cond_check_candidates
+            value: 'true'
+            varType: boolean
+            variable_selector:
+            - aggregate_candidates
+            - has_candidates
+          id: 'true'
+          logical_operator: and
+        desc: 有候选模式时调用 LLM 归纳，否则结束。
+        selected: false
+        title: 有候选?
+        type: if-else
+      height: 126
+      id: check_candidates
+      position:
+        x: 1040
+        y: 300
+      positionAbsolute:
+        x: 1040
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        model:
+          provider: langgenius/deepseek/deepseek
+          name: deepseek-v4-flash
+          mode: chat
+          completion_params:
+            temperature: 0.2
+            thinking: false
+        prompt_template:
+        - role: system
+          text: "你是电商理赔风控复盘助手。根据候选聚合结果，归纳可复用的错误模式。\n\n候选上下文：\n{{#aggregate_candidates.candidate_context#}}\n\n输出严格 JSON，不要\
+            \ markdown：\n{\n  \"patterns\": [\n    {\n      \"title\": \"...\",\n      \"category\": \"自动挖掘\",\n      \"priority\"\
+            : 15,\n      \"description\": \"...\",\n      \"mitigation\": \"...\",\n      \"sample_claim_ids\": [\"...\"]\n\
+            \    }\n  ]\n}\n\n要求：\n- 只保留具备重复性的模式。\n- 不编造 claim_id。\n- priority 初始为 15，等待人工确认后再进入正式错误模式库。"
+          id: prompt-generate_patterns
+          edition_type: basic
+        context:
+          enabled: true
+          variable_selector:
+          - aggregate_candidates
+          - candidate_context
+        vision:
+          enabled: false
+        type: llm
+        title: LLM 归纳错误模式
+        selected: false
+        structured_output_enabled: false
+        prompt_config:
+          jinja2_variables: []
+      height: 98
+      id: generate_patterns
+      position:
+        x: 1360
+        y: 420
+      positionAbsolute:
+        x: 1360
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: "import json\nimport re\n\ndef main(llm_text: str, fallback_candidates_json: str):\n    raw = (llm_text or \"\
+          \").strip()\n    raw = re.sub(r\"^```(?:json)?\\s*\", \"\", raw)\n    raw = re.sub(r\"\\s*```$\", \"\", raw)\n \
+          \   try:\n        parsed = json.loads(raw)\n    except Exception:\n        try:\n            parsed = {\"patterns\"\
+          : json.loads(fallback_candidates_json or \"[]\")}\n        except Exception:\n            parsed = {\"patterns\"\
+          : []}\n    patterns = parsed.get(\"patterns\") if isinstance(parsed, dict) else parsed\n    if not isinstance(patterns,\
+          \ list):\n        patterns = []\n    cleaned = []\n    seen = set()\n    for item in patterns:\n        if not isinstance(item,\
+          \ dict):\n            continue\n        title = str(item.get(\"title\") or item.get(\"pattern_name\") or \"\").strip()[:80]\n\
+          \        if not title or title in seen:\n            continue\n        seen.add(title)\n        cleaned.append({\n\
+          \            \"title\": title,\n            \"category\": str(item.get(\"category\") or \"自动挖掘\")[:40],\n      \
+          \      \"priority\": int(float(item.get(\"priority\") or 15)),\n            \"status\": \"pending_review\",\n  \
+          \          \"description\": str(item.get(\"description\") or item.get(\"evidence_summary\") or \"\")[:1000],\n \
+          \           \"mitigation\": str(item.get(\"mitigation\") or item.get(\"suggestion\") or \"人工确认后入正式错误模式库\")[:500],\n\
+          \            \"sample_claim_ids\": item.get(\"sample_claim_ids\") or []\n        })\n    return {\n        \"pattern_count\"\
+          : len(cleaned),\n        \"has_patterns\": len(cleaned) > 0,\n        \"patterns_json\": json.dumps(cleaned, ensure_ascii=False)\n\
+          \    }"
+        code_language: python3
+        desc: 解析 LLM JSON，执行标题去重与字段截断。
+        outputs:
+          pattern_count:
+            children: {}
+            type: number
+          has_patterns:
+            children: {}
+            type: boolean
+          patterns_json:
+            children: {}
+            type: string
+        selected: false
+        title: 解析与去重
+        type: code
+        variables:
+        - value_selector:
+          - generate_patterns
+          - text
+          variable: llm_text
+        - value_selector:
+          - aggregate_candidates
+          - candidates_json
+          variable: fallback_candidates_json
+      height: 54
+      id: parse_patterns
+      position:
+        x: 1680
+        y: 420
+      positionAbsolute:
+        x: 1680
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 没有满足最小出现次数的候选模式。
+        outputs:
+        - value_selector:
+          - aggregate_candidates
+          - record_count
+          variable: record_count
+        - value_selector:
+          - aggregate_candidates
+          - candidate_count
+          variable: candidate_count
+        - value_selector:
+          - aggregate_candidates
+          - candidates_json
+          variable: candidates_json
+        selected: false
+        title: 结束：无候选
+        type: end
+      height: 90
+      id: end_empty
+      position:
+        x: 1360
+        y: 180
+      positionAbsolute:
+        x: 1360
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 输出待人工确认的候选错误模式。
+        outputs:
+        - value_selector:
+          - aggregate_candidates
+          - record_count
+          variable: record_count
+        - value_selector:
+          - parse_patterns
+          - pattern_count
+          variable: pattern_count
+        - value_selector:
+          - parse_patterns
+          - patterns_json
+          variable: patterns_json
+        selected: false
+        title: 结束：候选模式
+        type: end
+      height: 90
+      id: end_patterns
+      position:
+        x: 2000
+        y: 420
+      positionAbsolute:
+        x: 2000
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.7
+  rag_pipeline_variables: []

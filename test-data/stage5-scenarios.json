@@ -1,0 +1,134 @@
+{
+  "scenarios": [
+    {
+      "id": "S01_fast_lane",
+      "name": "低金额快速通道",
+      "input": {
+        "user_text": "订单号10001，用户ID: U001，物流一直没有更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "fast_lane",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S02_medium_manual",
+      "name": "中金额进入合议",
+      "input": {
+        "user_text": "订单号10002，用户ID: U001，物流错分了，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10002.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "retrieval",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S03_high_risk_user",
+      "name": "高风险用户转人工",
+      "input": {
+        "user_text": "订单号10005，用户ID: U002，物流不更新了，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10005.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "retrieval",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S04_large_amount",
+      "name": "大金额拒绝或人工",
+      "input": {
+        "user_text": "订单号10003，用户ID: U001，物流一直没有更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10003.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "retrieval",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S05_missing_materials",
+      "name": "材料缺失转人工",
+      "input": {
+        "user_text": "订单号10004，用户ID: U001，物流有问题，申请理赔",
+        "file_list": [
+          {"name": "对话截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "retrieval",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S06_dependency_degraded",
+      "name": "外部数据缺失降级",
+      "input": {
+        "user_text": "订单号99999，用户ID: U001，物流不更新了，申请理赔",
+        "file_list": [
+          {"name": "订单截图.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "retrieval",
+        "must_have_log": true
+      }
+    },
+    {
+      "id": "S07_duplicate_submission",
+      "name": "重复提交拦截",
+      "input": {
+        "user_text": "订单号10001，用户ID: U001，物流一直没有更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "run_twice": true,
+      "expected": {
+        "duplicate_second_run": true
+      }
+    },
+    {
+      "id": "S08_degraded_band",
+      "name": "劣化模式知识检索分支",
+      "precondition": {
+        "biz_stats_update": {
+          "degradation_index": 0.6,
+          "smoothed_degradation_index": 0.55,
+          "queue_pressure": 0.4,
+          "signal_light": "yellow",
+          "k_factor": 2.0,
+          "max_daily_fast_lane": 3,
+          "max_degradation_fast_lane": 0.3
+        }
+      },
+      "input": {
+        "user_text": "订单号10001，用户ID: U001，物流一直没有更新，申请理赔",
+        "file_list": [
+          {"name": "订单截图_10001.png"},
+          {"name": "物流异常截图.png"}
+        ]
+      },
+      "expected": {
+        "path": "degraded",
+        "must_have_log": true
+      }
+    }
+  ]
+}
