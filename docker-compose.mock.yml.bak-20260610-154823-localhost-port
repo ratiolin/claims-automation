@@ -4,7 +4,7 @@ services:
   claims-mock:
     build: ./mock
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     networks:
       - docker_default
     restart: unless-stopped
