@@ -78,7 +78,7 @@ claims-automation/
 
 ├── test-data/
 
-│   └── stage5-scenarios.json               # 8 个全链路测试场景
+│   └── scenario-suite.json               # 8 个全链路测试场景
 
 ├── tools/
 
@@ -308,7 +308,7 @@ dify-workflows/error-pattern-mining-1.13.3.yml
 
 ## 7. 测试
 
-Stage 5 全链路测试脚本：
+全链路测试脚本：
 
 ```
 
@@ -347,7 +347,7 @@ python3 tools/write_candidate_pattern_to_kb.py \
   --pattern-json '[{"title":"manual_review filename_guess","category":"auto","priority":15,"status":"pending_review","occurrence_count":2,"description":"desc","mitigation":"mit","sample_claim_ids":["mine-001","mine-002"]}]'
 ```
 
-## 8. Stage 5 测试结果
+## 8. 全链路测试结果
 
 | 场景 | 结果 | 决策 | 分支 | 状态机 | 支付 | 决策日志 |
 
@@ -446,7 +446,7 @@ claims-automation/
 
   test-data/
 
-    stage5-scenarios.json
+    scenario-suite.json
 
   tools/
 
@@ -529,7 +529,7 @@ https://metratio.com/index/claims
     
 - 闭环链路
     
-- Stage 5 测试结果
+- 全链路测试结果
     
 - 候选知识库证据
     

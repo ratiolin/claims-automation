@@ -23,7 +23,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCENARIOS = ROOT / "test-data" / "stage5-scenarios.json"
+DEFAULT_SCENARIOS = ROOT / "test-data" / "scenario-suite.json"
 
 
 def request_json(
