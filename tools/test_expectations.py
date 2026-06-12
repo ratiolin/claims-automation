@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline unit tests for the Stage 5 assertion layer in run_stage5_checks.py.
+"""Offline unit tests for the Stage 5 assertion layer in run_checks.py.
 
 These run WITHOUT Dify or the Mock: they feed synthetic workflow summaries to the
 pure helper functions (summarize_workflow_result, _result_of, check_expectations,
@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import run_stage5_checks as m  # noqa: E402
+import run_checks as m  # noqa: E402
 
 _passed = 0
 _failed = 0

@@ -17,7 +17,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import run_stage5_checks as m  # noqa: E402
+import run_checks as m  # noqa: E402
 
 
 def jget(base, path):

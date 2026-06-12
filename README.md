@@ -27,7 +27,7 @@ curl http://localhost:8080/health
 
 DIFY_MAIN_WORKFLOW_API_KEY='...' \
 
-python3 tools/run_stage5_checks.py --mock-base http://localhost:8080 --workflow
+python3 tools/run_checks.py --mock-base http://localhost:8080 --workflow
 
 # 6. 重置 Mock 状态
 
@@ -82,7 +82,7 @@ claims-automation/
 
 ├── tools/
 
-│   ├── run_stage5_checks.py                # 全链路自动化测试
+│   ├── run_checks.py                # 全链路自动化测试
 
 │   ├── run_phase4_checks.py                # 闭环链路测试
 
@@ -316,7 +316,7 @@ cd ~/claims-automation
 
 DIFY_MAIN_WORKFLOW_API_KEY='...' \
 
-python3 tools/run_stage5_checks.py --mock-base http://localhost:8080 --workflow
+python3 tools/run_checks.py --mock-base http://localhost:8080 --workflow
 ```
 
 阶段四闭环测试脚本：
@@ -371,7 +371,7 @@ python3 tools/write_candidate_pattern_to_kb.py \
 
 S06 的 Dify 状态为 `partial-succeeded`，这是预期行为。HTTP 节点真实发生 503，但由 `default-value` 接住，业务结果完整落地。
 
-测试脚本（`tools/run_stage5_checks.py`）对每个场景自动断言：分支（fast_lane/healthy/degraded）、决策（approve/manual_review/reject）、支付副作用（approve→success，否则 skipped）、run 状态（S06 为 partial-succeeded）、重复提交（S07 第二次返回 duplicate 且不产生重复支付/日志）、以及决策日志写入。期望值编码于脚本的 `EXPECTATIONS`，断言逻辑由 `tools/test_expectations.py`（离线单测）固化。仅 transient 失败（连接/超时/5xx/run failed）触发有界重试（`--max-attempts`），分支或决策不符直接判失败。上表为 workflow-mode 实跑结果，8 个场景全部通过自动断言，且各场景 claim_id 互不相同（S01/S07/S08 使用不同订单与用户，避免幂等键碰撞）。
+测试脚本（`tools/run_checks.py`）对每个场景自动断言：分支（fast_lane/healthy/degraded）、决策（approve/manual_review/reject）、支付副作用（approve→success，否则 skipped）、run 状态（S06 为 partial-succeeded）、重复提交（S07 第二次返回 duplicate 且不产生重复支付/日志）、以及决策日志写入。期望值编码于脚本的 `EXPECTATIONS`，断言逻辑由 `tools/test_expectations.py`（离线单测）固化。仅 transient 失败（连接/超时/5xx/run failed）触发有界重试（`--max-attempts`），分支或决策不符直接判失败。上表为 workflow-mode 实跑结果，8 个场景全部通过自动断言，且各场景 claim_id 互不相同（S01/S07/S08 使用不同订单与用户，避免幂等键碰撞）。
 
 ## 9. 阶段四闭环测试结果
 
@@ -450,7 +450,7 @@ claims-automation/
 
   tools/
 
-    run_stage5_checks.py
+    run_checks.py
 
     run_phase4_checks.py
 
@@ -505,7 +505,7 @@ curl 'http://localhost:8080/mock/decision-log/query?days=7'
     
 - 状态机 `ttl` 参数当前仅记录、未实际触发过期；快速通道计数读取失败默认按 0 处理，最终原子保护在 `try-increment`。
     
-- 自动化测试已对分支、决策、支付副作用、run 状态与重复拦截做脚本断言（`run_stage5_checks.py` 的 `EXPECTATIONS` + `test_expectations.py`），workflow-mode 实跑 8/8 通过；仅 transient 失败有界重试。
+- 自动化测试已对分支、决策、支付副作用、run 状态与重复拦截做脚本断言（`run_checks.py` 的 `EXPECTATIONS` + `test_expectations.py`），workflow-mode 实跑 8/8 通过；仅 transient 失败有界重试。
     
 - 跨服务补偿（INV-3）：v2 在支付失败后仍把状态机置 completed 且不释放快速通道名额（已用 `tools/check_inv3_compensation.py` 实跑复现）。修复版 `dify-workflows/claims-main-workflow-stage6-inv3.yml` 在 payment 后加入 settle+release 节点（支付失败→状态 failed + 转人工 + 释放名额），已通过 tools/check_inv3_compensation.py live-verified。
     

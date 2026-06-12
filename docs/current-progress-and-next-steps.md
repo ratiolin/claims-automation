@@ -24,7 +24,7 @@
 
 ```bash
 cd ~/claims-automation
-python3 tools/run_stage5_checks.py --mock-base http://localhost:8080 --workflow
+python3 tools/run_checks.py --mock-base http://localhost:8080 --workflow
 ```
 
 如果未配置 `DIFY_MAIN_WORKFLOW_API_KEY`，脚本会只执行 Mock-only 检查。
