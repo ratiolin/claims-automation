@@ -17,7 +17,7 @@ curl http://localhost:8080/health
 
 # 3. 在 Dify 中导入主工作流
 
-#    文件: dify-workflows/claims-main-workflow-stage6-inv3.yml
+#    文件: dify-workflows/claims-main-workflow-stage6.1-inv3.yml
 
 # 4. 导入知识库种子数据
 
@@ -54,9 +54,8 @@ claims-automation/
 
 ├── dify-workflows/
 
-│   ├── claims-main-workflow-stage6-inv3.yml  # ★ 当前主工作流（68节点，24 HTTP，INV-3补偿）
+│   ├── claims-main-workflow-stage6.1-inv3.yml  # ★ 当前主工作流（68节点，24 HTTP，INV-3补偿）
 
-│   ├── claims-main-workflow-stage1.yml … stage5.yml / -fixed.yml   # 历史迭代版本
 
 │   ├── copy-quality-assessment-1.13.3.yml  # 文案质量评估工作流
 
@@ -190,7 +189,7 @@ Dify 负责：
 
 ```
 
-dify-workflows/claims-main-workflow-stage6-inv3.yml
+dify-workflows/claims-main-workflow-stage6.1-inv3.yml
 ```
 
 主工作流 API Key 由 Dify 控制台发布后生成，不写入代码仓库。
@@ -412,7 +411,7 @@ claims-automation/
 
   dify-workflows/
 
-    claims-main-workflow-stage6-inv3.yml
+    claims-main-workflow-stage6.1-inv3.yml
 
     copy-quality-assessment-1.13.3.yml
 
@@ -507,7 +506,7 @@ curl 'http://localhost:8080/mock/decision-log/query?days=7'
     
 - 自动化测试已对分支、决策、支付副作用、run 状态与重复拦截做脚本断言（`run_checks.py` 的 `EXPECTATIONS` + `test_expectations.py`），workflow-mode 实跑 8/8 通过；仅 transient 失败有界重试。
     
-- 跨服务补偿（INV-3）：v2 在支付失败后仍把状态机置 completed 且不释放快速通道名额（已用 `tools/check_inv3_compensation.py` 实跑复现）。修复版 `dify-workflows/claims-main-workflow-stage6-inv3.yml` 在 payment 后加入 settle+release 节点（支付失败→状态 failed + 转人工 + 释放名额），已通过 tools/check_inv3_compensation.py live-verified。
+- 跨服务补偿（INV-3）：v2 在支付失败后仍把状态机置 completed 且不释放快速通道名额（已用 `tools/check_inv3_compensation.py` 实跑复现）。修复版 `dify-workflows/claims-main-workflow-stage6.1-inv3.yml` 在 payment 后加入 settle+release 节点（支付失败→状态 failed + 转人工 + 释放名额），已通过 tools/check_inv3_compensation.py live-verified。
     
 - 真正生产化需要替换 Mock 服务、增加鉴权、审计、风控审批和持久化事务。
     

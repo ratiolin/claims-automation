@@ -14,7 +14,7 @@
 
 优先导入：
 
-1. `dify-workflows/claims-main-workflow-stage5-fixed.yml`
+1. `dify-workflows/claims-main-workflow-stage6.1-inv3.yml`
 2. `dify-workflows/copy-quality-assessment-1.13.3.yml`
 3. `dify-workflows/error-pattern-mining-1.13.3.yml`
 

@@ -31,13 +31,10 @@ SIDE_EFFECT_URLS = (
 
 
 def default_workflow() -> str:
-    for w in ("claims-main-workflow-stage6.1-inv3.yml",
-              "claims-main-workflow-stage6-inv3.yml",
-              "claims-main-workflow-stage5-v2.yml"):
-        p = os.path.join(WF_DIR, w)
-        if os.path.exists(p):
-            return p
-    raise SystemExit("no primary workflow file found in dify-workflows/")
+    p = os.path.join(WF_DIR, "claims-main-workflow-stage6.1-inv3.yml")
+    if os.path.exists(p):
+        return p
+    raise SystemExit("primary workflow claims-main-workflow-stage6.1-inv3.yml not found")
 
 
 def main() -> int:
