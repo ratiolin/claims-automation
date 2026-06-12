@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS decision_log (
     risk_reason     TEXT,
 
     -- 合议中心决策
-    decision        VARCHAR(20),          -- auto_approve / manual_review / reject
+    decision        VARCHAR(20),          -- approve / manual_review / reject
     final_amount    NUMERIC(10,2),
     dynamic_threshold NUMERIC(10,2),
 
