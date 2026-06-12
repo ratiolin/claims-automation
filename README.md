@@ -46,7 +46,7 @@ claims-automation/
 
 ├── mock/
 
-│   ├── main.py                      # 统一 Mock 服务（19 端点）
+│   ├── main.py                      # 统一 Mock 服务（28 路由端点：16 GET + 12 POST）
 
 │   ├── Dockerfile
 
@@ -56,7 +56,7 @@ claims-automation/
 
 │   ├── claims-main-workflow-stage5-v2.yml  # ★ 最终主工作流
 
-│   ├── claims-main-workflow-stage1-5.yml   # 历史迭代版本
+│   ├── claims-main-workflow-stage1.yml … stage5.yml / -fixed.yml   # 历史迭代版本
 
 │   ├── copy-quality-assessment-1.13.3.yml  # 文案质量评估工作流
 
@@ -194,6 +194,8 @@ dify-workflows/claims-main-workflow-stage5-v2.yml
 ```
 
 主工作流 API Key 由 Dify 控制台发布后生成，不写入代码仓库。
+
+主工作流共 62 个节点（其中 21 个 HTTP 节点），按数据质量分快速通道 / 健康 / 劣化三条结构对称的尾链。
 
 主链路：
 
@@ -369,6 +371,8 @@ python3 tools/write_candidate_pattern_to_kb.py \
 
 S06 的 Dify 状态为 `partial-succeeded`，这是预期行为。HTTP 节点真实发生 503，但由 `default-value` 接住，业务结果完整落地。
 
+测试脚本对每个场景自动断言的是：决策日志已写入、HTTP 状态非 4xx/5xx、run 状态非 failed。上表的决策、分支与副作用列为各场景运行后的人工核对记录；分支路径与重复提交拦截目前依赖人工核对，尚未纳入脚本自动断言。因此“通过”应理解为“产出日志且无 HTTP 错误 / run 失败”，分支与副作用的正确性以人工核对为准。
+
 ## 9. 阶段四闭环测试结果
 
 文案质量评估：
@@ -452,7 +456,7 @@ claims-automation/
 
     write_candidate_pattern_to_kb.py
 
-  FINAL_DOCUMENTATION.md
+  README.md
 ```
 
 ## 11. 运行与维护
@@ -496,6 +500,12 @@ curl 'http://localhost:8080/mock/decision-log/query?days=7'
 - 外部依赖失败返回 `partial-succeeded` 属于可接受信号，业务层已完成降级。
     
 - 候选错误模式需要人工确认后再进入正式错误模式库。
+    
+- 材料真实性当前为简化实现：图像分类节点按固定入参调用，Mock 默认返回材料齐全，材料完整性尚未实际强制；材料相关用例的转人工主要由物流信号与 LLM 证据判断驱动。
+    
+- 状态机 `ttl` 参数当前仅记录、未实际触发过期；快速通道计数读取失败默认按 0 处理，最终原子保护在 `try-increment`。
+    
+- 自动化测试当前断言决策日志、HTTP 状态与 run 状态；分支路径、重复拦截与副作用的正确性依赖人工核对，尚未纳入脚本断言。
     
 - 真正生产化需要替换 Mock 服务、增加鉴权、审计、风控审批和持久化事务。
     
