@@ -52,6 +52,9 @@ def request_json(
         except Exception:
             parsed = {"error": raw}
         return exc.code, parsed
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        # Read timeout / connection refused / DNS: surface as status 0 (transient)
+        return 0, {"error": f"transport: {exc}"}
 
 
 def load_scenarios(path: Path) -> list[dict[str, Any]]:
@@ -118,6 +121,7 @@ def run_workflow(
     scenario: dict[str, Any],
     *,
     user_prefix: str,
+    timeout: int = 180,
 ) -> tuple[int, Any, float]:
     inputs = scenario["input"]
     body = {
@@ -130,7 +134,7 @@ def run_workflow(
     }
     headers = {"Authorization": f"Bearer {api_key}"}
     started = time.perf_counter()
-    status, payload = request_json("POST", dify_base.rstrip("/") + "/v1/workflows/run", body=body, headers=headers, timeout=180)
+    status, payload = request_json("POST", dify_base.rstrip("/") + "/v1/workflows/run", body=body, headers=headers, timeout=timeout)
     elapsed = time.perf_counter() - started
     return status, payload, elapsed
 
@@ -164,8 +168,95 @@ def summarize_workflow_result(payload: Any) -> dict[str, Any]:
         "payment_body": outputs.get("payment_body"),
         "state_body": outputs.get("state_body"),
         "decision_log_body": outputs.get("decision_log_body"),
+        "result": outputs.get("result"),
+        "message": outputs.get("message"),
         "raw_error": payload.get("message") or payload.get("error"),
     }
+
+
+# ── Expected outcomes per scenario ───────────────────────────────────────────
+# Encoded in the test script (not scenarios.json) so this change touches one file.
+# branch ∈ {fast_lane, healthy, degraded}; decision ∈ {approve, manual_review, reject}.
+# payment: expected /payment/execute result ("success" on approve, else "skipped").
+# run_status: expected Dify run status ("succeeded"; "partial-succeeded" when a
+# dependency 503 is caught by default-value). duplicate_second: S07-style re-submit.
+EXPECTATIONS: dict[str, dict[str, Any]] = {
+    "S01_fast_lane":            {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded"},
+    "S02_medium_manual":        {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+    "S03_high_risk_user":       {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+    "S04_large_amount":         {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+    "S05_missing_materials":    {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+    "S06_dependency_degraded":  {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "partial-succeeded"},
+    "S07_duplicate_submission": {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded", "duplicate_second": True},
+    "S08_degraded_band":        {"branch": "degraded",  "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+}
+
+
+def _result_of(body: Any) -> Any:
+    """Extract the 'result' field from a Dify HTTP node body (str-JSON or dict)."""
+    if isinstance(body, dict):
+        return body.get("result")
+    if isinstance(body, str):
+        try:
+            return json.loads(body).get("result")
+        except Exception:
+            return None
+    return None
+
+
+def check_expectations(scenario_id: str, run_results: list[dict[str, Any]], log_count: int) -> list[str]:
+    """T1/T2/T3/T5: assert branch, decision, payment side-effect, run status and
+    duplicate handling against EXPECTATIONS. Returns a list of mismatch messages."""
+    exp = EXPECTATIONS.get(scenario_id)
+    issues: list[str] = []
+    if not exp or not run_results:
+        return issues
+    first = run_results[0]["summary"]
+
+    # T5: Dify run status (partial-succeeded expected when a dependency 503s)
+    want_status = exp.get("run_status", "succeeded")
+    if first.get("status") != want_status:
+        issues.append(f"run_status expected {want_status}, got {first.get('status')}")
+
+    # T1: branch correctness (fast_lane / healthy / degraded)
+    if first.get("branch") != exp["branch"]:
+        issues.append(f"branch expected {exp['branch']}, got {first.get('branch')}")
+
+    # decision correctness (approve / manual_review / reject)
+    if first.get("decision") != exp["decision"]:
+        issues.append(f"decision expected {exp['decision']}, got {first.get('decision')}")
+
+    # T3: payment side-effect (success only on approve, otherwise skipped)
+    pay = _result_of(first.get("payment_body"))
+    if pay != exp["payment"]:
+        issues.append(f"payment expected {exp['payment']}, got {pay}")
+
+    # T2: duplicate re-submission must early-stop and leave exactly one side-effect
+    if exp.get("duplicate_second"):
+        if len(run_results) < 2:
+            issues.append("expected 2 runs for duplicate scenario, got 1")
+        else:
+            second = run_results[1]["summary"]
+            if second.get("result") != "duplicate":
+                issues.append(f"second run expected result=duplicate, got {second.get('result')!r}")
+            if second.get("decision") is not None:
+                issues.append(f"second run expected no decision (duplicate path), got {second.get('decision')!r}")
+        if log_count != 1:
+            issues.append(f"duplicate scenario expected exactly 1 decision log, got {log_count}")
+
+    return issues
+
+
+def is_transient(run_results: list[dict[str, Any]]) -> bool:
+    """A run is transient (worth retrying) if the transport failed (status 0),
+    the server 5xx'd, or the Dify run itself reported status 'failed'. A wrong
+    branch/decision on a *succeeded* run is NOT transient — that is a real signal."""
+    for r in run_results:
+        if r["http_status"] == 0 or r["http_status"] >= 500:
+            return True
+        if r["summary"].get("status") == "failed":
+            return True
+    return False
 
 
 def main() -> int:
@@ -176,6 +267,10 @@ def main() -> int:
     parser.add_argument("--main-key", default=os.getenv("DIFY_MAIN_WORKFLOW_API_KEY", ""))
     parser.add_argument("--no-reset", action="store_true")
     parser.add_argument("--workflow", action="store_true", help="require Dify workflow mode; fail if no key is configured")
+    parser.add_argument("--timeout", type=int, default=int(os.getenv("DIFY_RUN_TIMEOUT", "180")),
+                        help="per-request timeout in seconds; raise it for DeepSeek cold-start")
+    parser.add_argument("--max-attempts", type=int, default=int(os.getenv("STAGE5_MAX_ATTEMPTS", "3")),
+                        help="max attempts per scenario; only transient failures are retried")
     args = parser.parse_args()
 
     scenarios = load_scenarios(args.scenarios)
@@ -210,29 +305,42 @@ def main() -> int:
         return 0
 
     for scenario in scenarios:
-        if not args.no_reset:
-            reset_mock(args.mock_base)
-        apply_precondition(args.mock_base, scenario)
         order_id, user_id = extract_ids(scenario["input"]["user_text"])
         cid = claim_id_for(order_id, user_id) if order_id and user_id else ""
         runs = 2 if scenario.get("run_twice") else 1
-        run_results = []
-        for i in range(runs):
-            status, payload, elapsed = run_workflow(args.dify_base, args.main_key, scenario, user_prefix="codex-stage5")
-            run_results.append(
-                {
-                    "run": i + 1,
-                    "http_status": status,
-                    "elapsed_seconds": round(elapsed, 3),
-                    "summary": summarize_workflow_result(payload),
-                }
-            )
+        attempt = 0
+        run_results: list[dict[str, Any]] = []
+        while True:
+            attempt += 1
+            # reset before every attempt so a half-completed retry cannot collide
+            # with its own earlier state (e.g. duplicate-detection on re-run).
+            if not args.no_reset:
+                reset_mock(args.mock_base)
+            apply_precondition(args.mock_base, scenario)
+            run_results = []
+            for i in range(runs):
+                status, payload, elapsed = run_workflow(
+                    args.dify_base, args.main_key, scenario,
+                    user_prefix="codex-stage5", timeout=args.timeout,
+                )
+                run_results.append(
+                    {
+                        "run": i + 1,
+                        "http_status": status,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "summary": summarize_workflow_result(payload),
+                    }
+                )
+            if is_transient(run_results) and attempt < args.max_attempts:
+                continue  # retry the whole scenario from a clean reset
+            break
         logs = [log for log in get_decision_logs(args.mock_base) if log.get("claim_id") == cid]
         state = get_state(args.mock_base, cid) if cid else {}
         result = {
             "id": scenario["id"],
             "name": scenario["name"],
             "claim_id": cid,
+            "attempts": attempt,
             "runs": run_results,
             "state": state,
             "log_count_for_claim": len(logs),
@@ -241,10 +349,14 @@ def main() -> int:
         if scenario.get("expected", {}).get("must_have_log") and not logs:
             result["failure"] = "expected decision log entry, got none"
             failures.append(f"{scenario['id']}: missing decision log")
-        if any(r["http_status"] >= 400 for r in run_results):
-            failures.append(f"{scenario['id']}: workflow HTTP error")
-        if any(r["summary"].get("status") == "failed" for r in run_results):
-            failures.append(f"{scenario['id']}: workflow run failed")
+        if any(400 <= r["http_status"] < 500 for r in run_results):
+            failures.append(f"{scenario['id']}: workflow HTTP error {[r['http_status'] for r in run_results]}")
+        if is_transient(run_results):
+            failures.append(f"{scenario['id']}: transient failure persisted after {attempt} attempt(s)")
+        exp_issues = check_expectations(scenario["id"], run_results, len(logs))
+        if exp_issues:
+            result["expectation_failures"] = exp_issues
+            failures.extend(f"{scenario['id']}: {m}" for m in exp_issues)
         results.append(result)
 
     print(json.dumps({"scenarios": results, "failures": failures}, ensure_ascii=False, indent=2))
