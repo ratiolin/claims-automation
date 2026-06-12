@@ -1,6 +1,6 @@
 """
 Claims Automation Mock Service
-All 19 endpoints for testing the Dify multi-agent claims processing system.
+All 30 endpoints for testing the Dify multi-agent claims processing system.
 """
 import json
 import time
@@ -19,6 +19,8 @@ state_db: dict = {}
 fast_lane_lock = threading.Lock()
 fast_lane_counts: dict = {}
 payment_lock = threading.Lock()
+# INV-3: 支付故障注入开关（测试用，模拟支付服务不可用）
+payment_force_fail = {"on": False}
 
 # ── Test scenario data ───────────────────────────────────────
 
@@ -28,6 +30,9 @@ ORDERS = {
     "10003": {"amount": 1200.0, "category": "家电", "detail": "订单10003：微波炉，下单2024-01-05，金额1200.00元，状态已付款。"},
     "10004": {"amount": 55.0, "category": "服饰", "detail": "订单10004：运动鞋，下单2024-01-12，金额55.00元，状态已付款。"},
     "10005": {"amount": 88.0, "category": "食品", "detail": "订单10005：坚果礼盒，下单2024-01-03，金额88.00元，状态已付款。"},
+    "10006": {"amount": 60.0, "category": "日用品", "detail": "订单10006：保温杯，下单2024-01-11，金额60.00元，状态已付款。"},
+    "10007": {"amount": 70.0, "category": "食品", "detail": "订单10007：饼干礼盒，下单2024-01-09，金额70.00元，状态已付款。"},
+    "10008": {"amount": 50.0, "category": "日用品", "detail": "订单10008：毛巾套装，下单2024-01-13，金额50.00元，状态已付款。"},
 }
 
 LOGISTICS = {
@@ -36,6 +41,9 @@ LOGISTICS = {
     "10003": {"anomaly_type": "超时未更新", "trace": "2024-01-05 揽件 → 2024-01-07 运输中 → 至今无更新。"},
     "10004": {"anomaly_type": "其他", "trace": "2024-01-12 揽件 → 2024-01-14 已签收。用户声称未收到。"},
     "10005": {"anomaly_type": "超时未更新", "trace": "2024-01-03 揽件 → 2024-01-04 运输中 → 至今无更新。"},
+    "10006": {"anomaly_type": "超时未更新", "trace": "2024-01-11 揽件 → 2024-01-13 运输中 → 至今无更新（超48小时）。"},
+    "10007": {"anomaly_type": "超时未更新", "trace": "2024-01-09 揽件 → 2024-01-10 运输中 → 至今无更新。"},
+    "10008": {"anomaly_type": "超时未更新", "trace": "2024-01-13 揽件 → 2024-01-14 运输中 → 至今无更新。"},
 }
 
 USERS = {
@@ -75,6 +83,18 @@ USERS = {
             {"flag": "高频退款", "severity": "high", "detail": "近30天退款率80%"},
             {"flag": "地址异常", "severity": "medium", "detail": "3个不同收货地址"},
         ],
+    },
+    "U003": {
+        "claim_count_12m": 1,
+        "static_risk": "low",
+        "order_history": [
+            {"order_id": "10006", "amount": 60.0, "status": "completed", "days_ago": 6},
+            {"order_id": "10007", "amount": 70.0, "status": "completed", "days_ago": 20},
+        ],
+        "claim_history": [
+            {"claim_id": "C301", "amount": 28.0, "result": "approved", "days_ago": 200},
+        ],
+        "risk_flags": [],
     },
 }
 
@@ -391,6 +411,27 @@ def reset_fast_lane():
     return {"status": "reset"}
 
 
+class FastLaneReleaseRequest(BaseModel):
+    user_id: str
+    claim_id: str = ""
+    release: bool = False
+
+@app.post("/mock/fast-lane/release")
+def release_fast_lane(req: FastLaneReleaseRequest):
+    """INV-3 补偿：支付失败时释放已消耗的快速通道名额。release=False 时为 no-op。"""
+    if not req.release:
+        return {"released": False, "reason": "no_release_requested"}
+    today = str(date.today())
+    with fast_lane_lock:
+        record = fast_lane_counts.get(req.user_id)
+        if not record or record.get("date") != today or record.get("count", 0) <= 0:
+            return {"released": False, "reason": "nothing_to_release",
+                    "count": record.get("count", 0) if record else 0}
+        record["count"] -= 1
+        fast_lane_counts[req.user_id] = record
+        return {"released": True, "new_count": record["count"]}
+
+
 # ══════════════════════════════════════════════════════════════
 #  2.7  支付服务 Mock
 # ══════════════════════════════════════════════════════════════
@@ -410,6 +451,13 @@ def execute_payment(req: PaymentRequest):
                 "amount": req.amount,
                 "message": "无需支付",
             }
+        if payment_force_fail["on"]:
+            return {
+                "result": "payment_failed",
+                "claim_id": req.claim_id,
+                "amount": req.amount,
+                "message": "支付服务不可用（测试注入）",
+            }
         record = state_db.get(req.claim_id)
         if record and record.get("paid"):
             return {
@@ -427,6 +475,13 @@ def execute_payment(req: PaymentRequest):
             "amount": req.amount,
             "transaction_id": txn_id,
         }
+
+
+@app.post("/mock/payment/set-fail")
+def set_payment_fail(cfg: dict):
+    """INV-3 测试：开关支付故障注入。{"on": true} 让后续 amount>0 的支付返回 payment_failed。"""
+    payment_force_fail["on"] = bool(cfg.get("on", False))
+    return {"payment_force_fail": payment_force_fail["on"]}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -515,6 +570,7 @@ def reset_all():
         state_db.clear()
     with fast_lane_lock:
         fast_lane_counts.clear()
+    payment_force_fail["on"] = False
     decision_log_store.clear()
     # 恢复默认 biz_stats
     CURRENT_BIZ_STATS.update({
