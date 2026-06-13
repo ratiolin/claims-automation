@@ -181,14 +181,14 @@ def summarize_workflow_result(payload: Any) -> dict[str, Any]:
 # run_status: expected Dify run status ("succeeded"; "partial-succeeded" when a
 # dependency 503 is caught by default-value). duplicate_second: S07-style re-submit.
 EXPECTATIONS: dict[str, dict[str, Any]] = {
-    "S01_fast_lane":            {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded"},
-    "S02_medium_manual":        {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
-    "S03_high_risk_user":       {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
-    "S04_large_amount":         {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
-    "S05_missing_materials":    {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
-    "S06_dependency_degraded":  {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "partial-succeeded"},
-    "S07_duplicate_submission": {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded", "duplicate_second": True},
-    "S08_degraded_band":        {"branch": "degraded",  "decision": "manual_review", "payment": "skipped", "run_status": "succeeded"},
+    "S01_fast_lane":            {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded", "payment_result": "success", "final_state": "completed", "order_amount": 45},
+    "S02_medium_manual":        {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 300},
+    "S03_high_risk_user":       {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 88},
+    "S04_large_amount":         {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 1200},
+    "S05_missing_materials":    {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 55},
+    "S06_dependency_degraded":  {"branch": "healthy",   "decision": "manual_review", "payment": "skipped", "run_status": "partial-succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 0},
+    "S07_duplicate_submission": {"branch": "fast_lane", "decision": "approve",       "payment": "success", "run_status": "succeeded", "duplicate_second": True, "payment_result": "success", "final_state": "completed", "order_amount": 45},
+    "S08_degraded_band":        {"branch": "degraded",  "decision": "manual_review", "payment": "skipped", "run_status": "succeeded", "payment_result": "skipped",  "final_state": "completed", "order_amount": 45},
 }
 
 
@@ -230,6 +230,29 @@ def check_expectations(scenario_id: str, run_results: list[dict[str, Any]], log_
     pay = _result_of(first.get("payment_body"))
     if pay != exp["payment"]:
         issues.append(f"payment expected {exp['payment']}, got {pay}")
+
+    # T6: decision log field assertions (payment_result, final_state, order_amount)
+    # Check against the log entry written by decision_log_insert_*
+    log = first.get("decision_log_body")
+    log_parsed = None
+    if isinstance(log, dict):
+        log_parsed = log
+    elif isinstance(log, str):
+        try:
+            import json
+            log_parsed = json.loads(log)
+        except Exception:
+            pass
+    if log_parsed:
+        if exp.get("payment_result") and log_parsed.get("payment_result") != exp["payment_result"]:
+            issues.append(f"log.payment_result expected {exp['payment_result']}, got {log_parsed.get('payment_result')}")
+        if exp.get("final_state") and log_parsed.get("final_state") != exp["final_state"]:
+            issues.append(f"log.final_state expected {exp['final_state']}, got {log_parsed.get('final_state')}")
+        if exp.get("order_amount") is not None:
+            want_amt = exp["order_amount"]
+            got_amt = log_parsed.get("order_amount")
+            if got_amt is not None and float(got_amt) != float(want_amt):
+                issues.append(f"log.order_amount expected {want_amt}, got {got_amt}")
 
     # T2: duplicate re-submission must early-stop and leave exactly one side-effect
     if exp.get("duplicate_second"):

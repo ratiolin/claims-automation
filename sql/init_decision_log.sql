@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS decision_log (
     user_message    TEXT,
     review_reason   TEXT,
     copy_quality_score  NUMERIC(3,2),
+    payment_result   VARCHAR(20),          -- success / skipped / payment_failed / unknown
+    final_state      VARCHAR(20),          -- completed / failed
+    compensate       BOOLEAN DEFAULT FALSE,
+    order_amount     NUMERIC(10,2),
 
     -- 标记
     fast_lane       BOOLEAN DEFAULT FALSE,

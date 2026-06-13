@@ -511,6 +511,10 @@ class DecisionLogRequest(BaseModel):
     user_message: str = ""
     review_reason: str = ""
     copy_quality_score: float = 0
+    payment_result: str = "" 
+    final_state: str = "" 
+    compensate: bool = False
+    order_amount: float = 0
     fast_lane: bool = False
     material_source: str = ""
     is_shadow_mode: bool = True

@@ -93,6 +93,54 @@ expect("S07 second-not-duplicate flagged",
        any("result=duplicate" in x for x in
            m.check_expectations("S07_duplicate_submission", s07_bad, 2)), True)
 
+# ── T6: decision log field assertions (payment_result, final_state, order_amount) ──
+
+def log_run(decision_log_body: dict):
+    """Shorthand: run result that includes a decision_log_body."""
+    return run(200, "succeeded", {"branch": "fast_lane", "decision": "approve",
+        "payment_body": '{"result":"success"}',
+        "decision_log_body": decision_log_body})
+
+expect("T6 log data correct",
+    m.check_expectations("S01_fast_lane", [log_run({
+        "payment_result": "success", "final_state": "completed",
+        "order_amount": 45.0, "fast_lane": False
+    })], 1), [])
+
+expect("T6 wrong payment_result flagged",
+    any("log.payment_result" in x for x in
+        m.check_expectations("S01_fast_lane", [log_run({
+            "payment_result": "payment_failed", "final_state": "completed",
+            "order_amount": 45.0
+        })], 1)), True)
+
+expect("T6 wrong final_state flagged",
+    any("log.final_state" in x for x in
+        m.check_expectations("S01_fast_lane", [log_run({
+            "payment_result": "success", "final_state": "failed",
+            "order_amount": 45.0
+        })], 1)), True)
+
+expect("T6 wrong order_amount flagged",
+    any("log.order_amount" in x for x in
+        m.check_expectations("S01_fast_lane", [log_run({
+            "payment_result": "success", "final_state": "completed",
+            "order_amount": 0
+        })], 1)), True)
+
+expect("T6 no log body skips assertions",
+    m.check_expectations("S01_fast_lane", [run(200, "succeeded", {
+        "branch": "fast_lane", "decision": "approve",
+        "payment_body": '{"result":"success"}'
+    })], 1), [])
+
+expect("T6 str-JSON parsed correctly",
+    m.check_expectations("S01_fast_lane", [run(200, "succeeded", {
+        "branch": "fast_lane", "decision": "approve",
+        "payment_body": '{"result":"success"}',
+        "decision_log_body": '{"payment_result":"success","final_state":"completed","order_amount":45}'
+    })], 1), [])
+
 # ── is_transient: infra-flake vs assertion-fail (the retry gate) ──────────────
 expect("transient: status 0", m.is_transient([run(0, "")]), True)
 expect("transient: HTTP 502", m.is_transient([run(502, "")]), True)

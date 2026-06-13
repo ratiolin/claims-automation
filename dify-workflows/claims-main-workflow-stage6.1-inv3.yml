@@ -4450,7 +4450,7 @@ workflow:
           - id: key-value-decision_log_insert_fast_lane-body
             key: ''
             type: text
-            value: '{"claim_id":"{{#settle_fast_lane.claim_id#}}","order_id":"{{#settle_fast_lane.order_id#}}","user_id":"{{#settle_fast_lane.user_id#}}","decision":"{{#settle_fast_lane.final_decision#}}","final_amount":{{#settle_fast_lane.final_amount#}},"user_message":"{{#settle_fast_lane.safe_user_message#}}","review_reason":"{{#settle_fast_lane.safe_decision_reason#}}","fast_lane":{{#settle_fast_lane.fast_lane_json#}},"material_source":"{{#settle_fast_lane.material_source#}}","is_shadow_mode":true}'
+            value: '{"claim_id":"{{#settle_fast_lane.claim_id#}}","order_id":"{{#settle_fast_lane.order_id#}}","user_id":"{{#settle_fast_lane.user_id#}}","decision":"{{#settle_fast_lane.final_decision#}}","final_amount":{{#settle_fast_lane.final_amount#}},"user_message":"{{#settle_fast_lane.safe_user_message#}}","review_reason":"{{#settle_fast_lane.safe_decision_reason#}}","fast_lane":{{#settle_fast_lane.fast_lane_json#}},"material_source":"{{#settle_fast_lane.material_source#}}","payment_result":"{{#settle_fast_lane.payment_result#}}","final_state":"{{#settle_fast_lane.final_state#}}","compensate":{{#settle_fast_lane.compensate#}},"order_amount":{{#post_guard_fast_lane.order_amount#}},"raw_claim_result":"{{#post_guard_fast_lane.claim_result#}}","raw_risk_result":"{{#post_guard_fast_lane.risk_result#}}","is_shadow_mode":true}'
           type: json
         headers: ''
         variables: []
@@ -4994,7 +4994,7 @@ workflow:
           - id: key-value-decision_log_insert_healthy-body
             key: ''
             type: text
-            value: '{"claim_id":"{{#settle_healthy.claim_id#}}","order_id":"{{#settle_healthy.order_id#}}","user_id":"{{#settle_healthy.user_id#}}","decision":"{{#settle_healthy.final_decision#}}","final_amount":{{#settle_healthy.final_amount#}},"user_message":"{{#settle_healthy.safe_user_message#}}","review_reason":"{{#settle_healthy.safe_decision_reason#}}","fast_lane":{{#settle_healthy.fast_lane_json#}},"material_source":"{{#settle_healthy.material_source#}}","is_shadow_mode":true}'
+            value: '{"claim_id":"{{#settle_healthy.claim_id#}}","order_id":"{{#settle_healthy.order_id#}}","user_id":"{{#settle_healthy.user_id#}}","decision":"{{#settle_healthy.final_decision#}}","final_amount":{{#settle_healthy.final_amount#}},"user_message":"{{#settle_healthy.safe_user_message#}}","review_reason":"{{#settle_healthy.safe_decision_reason#}}","fast_lane":{{#settle_healthy.fast_lane_json#}},"material_source":"{{#settle_healthy.material_source#}}","payment_result":"{{#settle_healthy.payment_result#}}","final_state":"{{#settle_healthy.final_state#}}","compensate":{{#settle_healthy.compensate#}},"order_amount":{{#post_guard_healthy.order_amount#}},"raw_claim_result":"{{#post_guard_healthy.claim_result#}}","raw_risk_result":"{{#post_guard_healthy.risk_result#}}","is_shadow_mode":true}'
           type: json
         headers: ''
         variables: []
@@ -5538,7 +5538,7 @@ workflow:
           - id: key-value-decision_log_insert_degraded-body
             key: ''
             type: text
-            value: '{"claim_id":"{{#settle_degraded.claim_id#}}","order_id":"{{#settle_degraded.order_id#}}","user_id":"{{#settle_degraded.user_id#}}","decision":"{{#settle_degraded.final_decision#}}","final_amount":{{#settle_degraded.final_amount#}},"user_message":"{{#settle_degraded.safe_user_message#}}","review_reason":"{{#settle_degraded.safe_decision_reason#}}","fast_lane":{{#settle_degraded.fast_lane_json#}},"material_source":"{{#settle_degraded.material_source#}}","is_shadow_mode":true}'
+            value: '{"claim_id":"{{#settle_degraded.claim_id#}}","order_id":"{{#settle_degraded.order_id#}}","user_id":"{{#settle_degraded.user_id#}}","decision":"{{#settle_degraded.final_decision#}}","final_amount":{{#settle_degraded.final_amount#}},"user_message":"{{#settle_degraded.safe_user_message#}}","review_reason":"{{#settle_degraded.safe_decision_reason#}}","fast_lane":{{#settle_degraded.fast_lane_json#}},"material_source":"{{#settle_degraded.material_source#}}","payment_result":"{{#settle_degraded.payment_result#}}","final_state":"{{#settle_degraded.final_state#}}","compensate":{{#settle_degraded.compensate#}},"order_amount":{{#post_guard_degraded.order_amount#}},"raw_claim_result":"{{#post_guard_degraded.claim_result#}}","raw_risk_result":"{{#post_guard_degraded.risk_result#}}","is_shadow_mode":true}'
           type: json
         headers: ''
         variables: []

@@ -92,6 +92,36 @@ def main() -> int:
        sig in gen and tail in gen and sig in run and tail in run,
        f"workflow={sig in gen and tail in gen} run_checks={sig in run and tail in run}")
 
+    # INV-3 三层独立幂等（create-if-absent + CAS + paid flag）
+    _sc_body = ""
+    for _kv in nodes.get("state_create", {}).get("data", {}).get("body", {}).get("data", []):
+        if _kv.get("key") == "":
+            _sc_body = _kv.get("value", "")
+    _sc_ok = "claim_id" in _sc_body
+    _cas_ok = 0
+    for _p in ("fast_lane", "healthy", "degraded"):
+        _nid = f"state_complete_{_p}"
+        _body = ""
+        for _kv in nodes.get(_nid, {}).get("data", {}).get("body", {}).get("data", []):
+            if _kv.get("key") == "":
+                _body = _kv.get("value", "")
+        _cas_ok += "claim_id" in _body and "expected" in _body and "next" in _body
+    _pay_ok = 0
+    for _p in ("fast_lane", "healthy", "degraded"):
+        _nid = f"payment_execute_{_p}"
+        _body = ""
+        for _kv in nodes.get(_nid, {}).get("data", {}).get("body", {}).get("data", []):
+            if _kv.get("key") == "":
+                _body = _kv.get("value", "")
+        _pay_ok += "claim_id" in _body
+    _mock = open(os.path.join(ROOT, "mock", "main.py"), encoding="utf-8").read()
+    _mock_ok = 'create_if_absent' in _mock and 'complete_if_status' in _mock and '"already_paid"' in _mock
+    _checks = open(os.path.join(ROOT, "tools", "run_checks.py"), encoding="utf-8").read()
+    _s07_ok = 'second.get("result")' in _checks and '"duplicate"' in _checks
+    ck("INV-3 三层幂等",
+       _sc_ok and _cas_ok == 3 and _pay_ok == 3 and _mock_ok and _s07_ok,
+       f"create-if-absent={_sc_ok} CAS={_cas_ok}/3 paid={_pay_ok}/3 Mock={_mock_ok} S07={_s07_ok}")
+
     # INV-14 决策枚举封闭
     enum_code = any(
         all(t in nodes.get(nid, {}).get("data", {}).get("code", "")
