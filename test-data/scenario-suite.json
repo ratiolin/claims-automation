@@ -62,7 +62,7 @@
     },
     {
       "id": "S05_missing_materials",
-      "name": "材料缺失转人工",
+      "name": "证据不足/物流签收争议转人工",
       "input": {
         "user_text": "订单号10004，用户ID: U001，物流有问题，申请理赔",
         "file_list": [

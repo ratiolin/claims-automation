@@ -102,6 +102,10 @@ claims-automation/
 
 └── docs/
 
+    ├── architecture.svg                    # 主工作流架构图（README 顶部引用）
+
+    ├── design.md                           # 完整设计文档（21 节）
+
     ├── stage5-test-report.md
 
     ├── phase4-closed-loop-test-report.md
@@ -121,7 +125,7 @@ claims-automation/
 
 | 阶段二 Mock 与独立工作流 | 完成 | 外部依赖 Mock、文案质量评估、错误模式挖掘已发布 |
 
-| 阶段三 Dify 主工作流 | 完成 | Stage 6 INV-3 主工作流已发布并通过全链路测试与补偿验证 |
+| 阶段三 Dify 主工作流 | 完成 | stage6.1 主工作流（含 INV-3 跨服务补偿）已发布并通过全链路测试与补偿验证 |
 
 | 阶段四 闭环打通 | 完成 | 文案质量、错误挖掘、候选知识库写入已验证 |
 
@@ -237,9 +241,13 @@ dify-workflows/claims-main-workflow-stage6.1-inv3.yml
     
 13. 支付幂等
     
-14. 状态机 CAS 完成
+14. settle 结算与补偿判定（支付失败 → 状态置 failed + 转人工）
     
-15. 决策日志写入
+15. release 释放快速通道名额（补偿路径：支付失败时归还已占用名额）
+    
+16. 状态机 CAS 完成
+    
+17. 决策日志写入
     
 
 关键修复：
@@ -259,7 +267,7 @@ dify-workflows/claims-main-workflow-stage6.1-inv3.yml
 
 | 错误模式库（正式） | `11c2953a-8fe5-40b8-bd08-698034e07305` | 主工作流检索正式错误模式 |
 
-| 错误模式库（候选） | `84595bdf-aa20-4cd8-9a56-0fead9284e1a` | 文案质量和自动挖掘产生的候选模式 |
+| 错误模式库（候选） | `84595bdf-aa20-4cd8-9a56-0fead9284e1a` | 文案质量和自动挖掘产生的候选模式；**不被主工作流检索**，与正式库物理隔离，人工确认后才迁入正式库 |
 
 | 相似案例库 | `9114aeda-736d-4b14-a3ec-9d1b194c2352` | 主工作流检索相似历史案例 |
 
@@ -359,6 +367,28 @@ python3 tools/write_candidate_pattern_to_kb.py \
   --pattern-json '[{"title":"manual_review filename_guess","category":"auto","priority":15,"status":"pending_review","occurrence_count":2,"description":"desc","mitigation":"mit","sample_claim_ids":["mine-001","mine-002"]}]'
 ```
 
+跨服务补偿验证脚本（INV-3 · 故障注入）：
+
+```
+
+cd ~/claims-automation
+
+python3 tools/check_inv3_compensation.py \
+
+  --mock-base http://localhost:8080 \
+
+  --main-key '...'
+```
+
+静态不变量检查（离线，无需起服务）：
+
+```
+
+cd ~/claims-automation
+
+python3 tools/check_static_invariants.py
+```
+
 ## 8. 全链路测试结果
 
 | 场景 | 结果 | 决策 | 分支 | 状态机 | 支付 | 决策日志 |
@@ -373,7 +403,7 @@ python3 tools/write_candidate_pattern_to_kb.py \
 
 | S04 大金额 | 通过 | manual_review | healthy | completed | skipped | inserted |
 
-| S05 材料缺失 | 通过 | manual_review | healthy | completed | skipped | inserted |
+| S05 证据不足 / 物流签收争议 | 通过 | manual_review | healthy | completed | skipped | inserted |
 
 | S06 外部依赖失败 | 通过 | manual_review | healthy | completed | skipped | inserted |
 
@@ -431,6 +461,10 @@ claims-automation/
     error-pattern-mining-1.13.3.yml
 
   docs/
+
+    architecture.svg
+
+    design.md
 
     stage5-test-report.md
 
