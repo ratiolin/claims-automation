@@ -14,6 +14,9 @@
 
 ![理赔主工作流架构](docs/architecture.svg)
 
+> 完整设计文档（场景 / 设计原则 / 分支策略 / 合议 / 补偿 / 可观测性，21 节）：[docs/design.md](docs/design.md)
+> 术语对照：`settle` = 结算节点 · `release` = 名额释放 · `biz_stats` = 业务态势 · 三带 = 快速通道 / 健康带 / 劣化带
+
 ## 快速开始
 
 ```
@@ -517,6 +520,10 @@ curl 'http://localhost:8080/mock/decision-log/query?days=7'
 - 自动化测试已对分支、决策、支付副作用、run 状态与重复拦截做脚本断言（`run_checks.py` 的 `EXPECTATIONS` + `test_expectations.py`），workflow-mode 实跑 8/8 通过；仅 transient 失败有界重试。
     
 - 跨服务补偿（INV-3）：v2 在支付失败后仍把状态机置 completed 且不释放快速通道名额（已用 `tools/check_inv3_compensation.py` 实跑复现）。修复版 `dify-workflows/claims-main-workflow-stage6.1-inv3.yml` 在 payment 后加入 settle+release 节点（支付失败→状态 failed + 转人工 + 释放名额），已通过 tools/check_inv3_compensation.py live-verified。
+    
+- 业务可观测性（设计 §19）尚未实现：现有 Prometheus/Grafana 为系统级（CPU/容器/blackbox），自动通过率、人工兜底率、降级率、支付失败数、P95 延迟等业务指标暂未落地，劣化时"自动收缩审批范围"也未接入。
+    
+- 决策日志写入字段为设计 §15 的子集：当前约落库 10 个字段，定责定损/用户信用原始输出、置信度、补偿结果、业务态势快照等尚未写入——这也限制了上述业务指标的可计算性与错误挖掘的丰富度。
     
 - 真正生产化需要替换 Mock 服务、增加鉴权、审计、风控审批和持久化事务。
     
